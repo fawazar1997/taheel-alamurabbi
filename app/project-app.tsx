@@ -20,6 +20,7 @@ import {
   MapPinned,
   Presentation,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -203,6 +204,16 @@ function achievementItems(o: Org) {
     label: x.label,
   }));
 }
+function achievementRate(o: Org) {
+  const items = achievementItems(o);
+  if (!items.length) return 0;
+  const points = items.reduce(
+    (sum, item) =>
+      sum + (item.status === "completed" ? 100 : item.status === "partial" ? 50 : 0),
+    0,
+  );
+  return Math.round(points / items.length);
+}
 const planLabel = (o: Org, p: number) =>
   o.planStatus === "submitted"
     ? "مكتمل"
@@ -241,10 +252,15 @@ export default function ProjectApp() {
     [view, setView] = useState("dashboard"),
     [selected, setSelected] = useState<string | null>(null),
     [mobile, setMobile] = useState(false);
-  const token =
+  const orgToken =
     typeof window !== "undefined"
       ? new URLSearchParams(location.search).get("org")
       : null;
+  const assessmentToken =
+    typeof window !== "undefined"
+      ? new URLSearchParams(location.search).get("assessment")
+      : null;
+  const token = orgToken || assessmentToken;
   const load = async () => {
     try {
       const r = await fetch(
@@ -269,7 +285,9 @@ export default function ProjectApp() {
         </div>
       </div>
     );
-  if (token) return <Portal data={data} token={token} reload={load} />;
+  if (assessmentToken)
+    return <AssessmentPortal data={data} />;
+  if (orgToken) return <Portal data={data} token={orgToken} reload={load} />;
   const org = data.organizations.find((x) => x.id === selected);
   if (org)
     return (
@@ -283,6 +301,7 @@ export default function ProjectApp() {
   const titles: any = {
     dashboard: "لوحة المتابعة",
     organizations: "الجهات المشاركة",
+    assessment: "قياس المنظمات 360°",
     attendance: "حضور لقاءات المربي",
     reports: "التقارير والتحليلات",
     settings: "إعدادات المشروع",
@@ -313,6 +332,7 @@ export default function ProjectApp() {
           {[
             ["dashboard", "لوحة المتابعة", LayoutDashboard],
             ["organizations", "الجهات المشاركة", Building2],
+            ["assessment", "قياس المنظمات 360°", ChartNoAxesColumnIncreasing],
             ["attendance", "حضور لقاءات المربي", UserRoundCheck],
             ["reports", "التقارير والتحليلات", ChartNoAxesColumnIncreasing],
             ["settings", "إعدادات المشروع", Settings],
@@ -365,6 +385,7 @@ export default function ProjectApp() {
           {view === "organizations" && (
             <Organizations data={data} open={setSelected} reload={load} />
           )}{" "}
+          {view === "assessment" && <AssessmentAdmin data={data} />}{" "}
           {view === "attendance" && <Attendance data={data} reload={load} />}{" "}
           {view === "reports" && <Reports data={data} />}{" "}
           {view === "settings" && <ProjectSettings data={data} reload={load} />}
@@ -386,9 +407,12 @@ function Dashboard({
     orgs = data.organizations;
   const completed = orgs.filter((o) => o.planStatus === "submitted").length,
     totalP = orgs.reduce((a, o) => a + o.participants, 0),
-    progress = Math.round(
-      orgs.reduce((a, o) => a + calc(o, s).progress, 0) / orgs.length,
-    ),
+    progress = orgs.length
+      ? Math.round(orgs.reduce((a, o) => a + calc(o, s).progress, 0) / orgs.length)
+      : 0,
+    avgAchievement = orgs.length
+      ? Math.round(orgs.reduce((a, o) => a + achievementRate(o), 0) / orgs.length)
+      : 0,
     att = data.attendance.reduce((a, x) => a + x.attendees, 0),
     possible = orgs.reduce(
       (a, o) => a + o.participants * s.educatorMeetings,
@@ -422,6 +446,13 @@ function Dashboard({
       () => go("attendance"),
     ],
     ["تحتاج متابعة", missing, "جهة", Search, () => go("organizations")],
+    [
+      "متوسط الإنجاز",
+      `${avgAchievement}%`,
+      "كل الجهات",
+      ClipboardCheck,
+      () => go("organizations"),
+    ],
   ];
   return (
     <>
@@ -483,7 +514,7 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
             <TableHead key={i}>حضور {i + 1}</TableHead>
           ))}
           <TableHead>نسبة الحضور</TableHead>
-          <TableHead>قياس 360°</TableHead>
+          <TableHead>معدل الإنجاز</TableHead>
           <TableHead>آخر تحديث</TableHead>
         </TableRow>
       </TableHeader>
@@ -525,9 +556,10 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
               )}
               <TableCell>{rate}%</TableCell>
               <TableCell>
-                <Badge variant="outline" className="text-slate-500">
-                  لاحقًا
-                </Badge>
+                <div className="flex min-w-24 items-center gap-2">
+                  <Progress value={achievementRate(o)} className="h-2" />
+                  <span className="text-xs">{achievementRate(o)}%</span>
+                </div>
               </TableCell>
               <TableCell className="min-w-36 text-xs text-slate-500">
                 {date(o.planUpdatedAt || o.updatedAt)}
@@ -613,12 +645,35 @@ function Organizations({
                     <b>{c.progress}%</b>
                   </div>
                   <Progress value={c.progress} />
+                  <div className="mb-2 mt-4 flex justify-between text-xs">
+                    <span>معدل الإنجاز</span>
+                    <b>{achievementRate(o)}%</b>
+                  </div>
+                  <Progress value={achievementRate(o)} />
                 </div>
                 <div className="flex items-center justify-between border-t pt-4">
                   <span className="text-sm text-slate-500">
                     {o.participants} مشاركًا
                   </span>
                   <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={async () => {
+                        if (!window.confirm(`حذف جهة «${o.name}» نهائيًا مع خطتها وحضورها وإنجازها؟`)) return;
+                        try {
+                          await post({ action: "deleteOrg", id: o.id });
+                          toast.success("تم حذف الجهة");
+                          reload();
+                        } catch (e: any) {
+                          toast.error(e.message);
+                        }
+                      }}
+                      title="حذف الجهة"
+                    >
+                      <Trash2 />
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -935,6 +990,17 @@ function OrgFile({
               >
                 <Copy /> رابط الإنجاز
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${location.origin}/?assessment=${org.accessToken}`,
+                  );
+                  toast.success("تم نسخ رابط قياس 360 المستقل");
+                }}
+              >
+                <Copy /> رابط قياس 360
+              </Button>
               <Dialog open={edit} onOpenChange={setEdit}>
                 <DialogTrigger asChild>
                   <Button className="bg-white/10 hover:bg-white/20">
@@ -947,12 +1013,29 @@ function OrgFile({
                   reload={reload}
                 />
               </Dialog>
+              <Button
+                className="bg-rose-500/20 text-white hover:bg-rose-500/35"
+                onClick={async () => {
+                  if (!window.confirm(`حذف جهة «${org.name}» نهائيًا مع جميع بياناتها؟`)) return;
+                  try {
+                    await post({ action: "deleteOrg", id: org.id });
+                    toast.success("تم حذف الجهة");
+                    back();
+                    reload();
+                  } catch (e: any) {
+                    toast.error(e.message);
+                  }
+                }}
+              >
+                <Trash2 /> حذف الجهة
+              </Button>
             </div>
           </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid gap-3 sm:grid-cols-5">
             <Info label="حالة الاستكمال" value={planLabel(org, c.progress)} />
             <Info label="نسبة اكتمال الخطة" value={`${c.progress}%`} />
             <Info label="تسليم الإنجاز" value={achievementLabel} />
+            <Info label="معدل الإنجاز" value={`${achievementRate(org)}%`} />
             <Info
               label="آخر تحديث"
               value={date(org.planUpdatedAt || org.updatedAt)}
@@ -965,7 +1048,6 @@ function OrgFile({
             <TabsTrigger value="plan">الخطة السنوية</TabsTrigger>
             <TabsTrigger value="achievement">الإنجاز</TabsTrigger>
             <TabsTrigger value="attendance">حضور لقاءات المربي</TabsTrigger>
-            <TabsTrigger value="360">قياس 360°</TabsTrigger>
           </TabsList>
           <TabsContent value="summary">
             <Summary org={org} data={data} />
@@ -1015,9 +1097,6 @@ function OrgFile({
               </Card>
             </div>
           </TabsContent>
-          <TabsContent value="360">
-            <Coming360 />
-          </TabsContent>
         </Tabs>
       </main>
     </div>
@@ -1054,7 +1133,7 @@ function Summary({ org, data }: { org: Org; data: Data }) {
             ["الأنشطة المخططة", c.total],
             ["عدد المشاركين", org.participants],
             ["متوسط الحضور", `${avg}%`],
-            ["قياس 360°", "لم يبدأ"],
+            ["معدل الإنجاز", `${achievementRate(org)}%`],
           ].map(([a, b]) => (
             <div key={a} className="rounded-2xl border bg-slate-50/60 p-4">
               <span className="text-sm text-slate-500">{a}</span>
@@ -1235,23 +1314,84 @@ function AchievementRead({ org }: { org: Org }) {
     </div>
   );
 }
-function Coming360() {
+function AssessmentAdmin({ data }: { data: Data }) {
   return (
-    <Card className="border-dashed">
-      <CardContent className="grid min-h-72 place-items-center p-8 text-center">
-        <div>
-          <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e9f2ee] text-[#0b5b46]">
-            <ChartNoAxesColumnIncreasing className="size-8" />
+    <div className="space-y-5">
+      <Card className="border-dashed">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#e9f2ee] text-[#0b5b46]">
+              <ChartNoAxesColumnIncreasing />
+            </div>
+            <div>
+              <h2 className="font-bold">قياس المنظمات 360°</h2>
+              <p className="mt-1 text-sm leading-7 text-slate-500">
+                محور مستقل عن الخطة والإنجاز. سيُستكمل نموذج المعايير بعد تزويدنا
+                به، مع دعم البيئات التربوية والمقيمين والقياس القبلي والبعدي
+                وحساب المتوسط والتحسن.
+              </p>
+            </div>
           </div>
-          <h3 className="mt-5 text-xl font-bold">قياس المنظمات 360°</h3>
-          <p className="mx-auto mt-2 max-w-lg text-sm leading-7 text-slate-500">
-            سيتم استكمال نموذج القياس لاحقًا. البنية مجهزة لدعم عدة بيئات
-            تربوية، والقياس القبلي والبعدي، ونسب التحسن على مستوى البيئة والجهة
-            والمشروع.
-          </p>
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {data.organizations.map((org) => (
+          <Card key={org.id} className="border-0 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold">{org.name}</h3>
+                  <p className="mt-1 text-xs text-slate-500">رابط مستقل لقياس 360°</p>
+                </div>
+                <Badge variant="outline">بانتظار النموذج</Badge>
+              </div>
+              <Button
+                className="mt-5 w-full"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `${location.origin}/?assessment=${org.accessToken}`,
+                  );
+                  toast.success("تم نسخ رابط قياس 360");
+                }}
+              >
+                <Copy /> نسخ رابط القياس
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+function AssessmentPortal({ data }: { data: Data }) {
+  const org = data.organizations[0];
+  if (!org)
+    return <div className="grid min-h-screen place-items-center">رابط القياس غير صالح</div>;
+  return (
+    <div className="min-h-screen bg-[#f5f7f6]">
+      <header className="bg-[#073f32] text-white">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-5">
+          <div><b>قياس المنظمات 360°</b><p className="text-xs text-white/55">مشروع تأهيل المربي</p></div>
+          <span className="rounded-full bg-white/10 px-3 py-1.5 text-sm">{org.name}</span>
         </div>
-      </CardContent>
-    </Card>
+      </header>
+      <main className="mx-auto max-w-4xl p-4 py-10">
+        <Card className="border-dashed">
+          <CardContent className="grid min-h-80 place-items-center p-8 text-center">
+            <div>
+              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e9f2ee] text-[#0b5b46]"><ChartNoAxesColumnIncreasing className="size-8" /></div>
+              <h1 className="mt-5 text-2xl font-bold">بوابة قياس المنظمات 360°</h1>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-slate-500">
+                هذا الرابط مستقل عن الخطة السنوية والإنجاز. سيتم تفعيل إضافة
+                البيئات التربوية والمقيمين والقياس القبلي والبعدي والمتوسطات فور
+                اعتماد نموذج التقييم ومعاييره.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
   );
 }
 function Portal({
@@ -1307,7 +1447,7 @@ function Portal({
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500">
             أدخل الخطة السنوية أولًا، وبعد اعتمادها يمكنك رفع الإنجاز الفعلي لكل
-            نشاط مع رابط الإثبات.
+            نشاط، مع إمكانية إرفاق رابط إثبات اختياري.
           </p>
         </div>
         <Tabs defaultValue={requested}>
@@ -1327,9 +1467,6 @@ function Portal({
             <AchievementForm org={org} token={token} reload={reload} />
           </TabsContent>
         </Tabs>
-        <div className="mt-6">
-          <Coming360 />
-        </div>
       </main>
     </div>
   );
@@ -1510,11 +1647,6 @@ function AchievementForm({
     if (submit) {
       const missing = items.find((x) => !x.status);
       if (missing) return toast.error(`حدد حالة التنفيذ: ${missing.label}`);
-      const noEvidence = items.find(
-        (x) => x.status !== "not_completed" && !x.evidenceUrl.trim(),
-      );
-      if (noEvidence)
-        return toast.error(`أضف رابط الإثبات: ${noEvidence.label}`);
     }
     setBusy(true);
     try {
@@ -1586,7 +1718,7 @@ function AchievementForm({
                 placeholder="https://drive.google.com/..."
               />
               <p className="mt-1 text-xs text-slate-500">
-                رابط ملف أو مجلد صور أو تقرير، ويُطلب للمنجز والمنجز جزئيًا.
+                  اختياري: رابط ملف أو مجلد صور أو تقرير يدعم الإنجاز.
               </p>
             </div>
           </CardContent>

@@ -240,6 +240,8 @@ export async function POST(request: Request) {
       await sql`UPDATE organizations SET name=${b.name},contact_name=${b.contactName || ""},phone=${b.phone || ""},email=${b.email || ""},participants=${Number(b.participants) || 0},notes=${b.notes || ""},updated_at=${t} WHERE id=${b.id}`;
     if (b.action === "archiveOrg")
       await sql`UPDATE organizations SET archived=TRUE,updated_at=${t} WHERE id=${b.id}`;
+    if (b.action === "deleteOrg")
+      await sql`DELETE FROM organizations WHERE id=${b.id}`;
     if (b.action === "savePlan") {
       const org =
         await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
