@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 const now = () => new Date().toISOString();
 const uid = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
+const DEFAULT_WORKSHOP_AXES = ["المحور التربوي", "المحور القيمي", "المحور المهاري", "المحور القيادي", "المحور الاجتماعي", "المحور المعرفي"];
 
 async function ensureSchema() {
   const sql = getSql();
@@ -14,8 +15,10 @@ async function ensureSchema() {
     min_development_meetings INTEGER NOT NULL DEFAULT 2,
     min_trips INTEGER NOT NULL DEFAULT 1,
     min_workshops INTEGER NOT NULL DEFAULT 2,
+    workshop_axes JSONB NOT NULL DEFAULT '["المحور التربوي","المحور القيمي","المحور المهاري","المحور القيادي","المحور الاجتماعي","المحور المعرفي"]'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL
   )`;
+  await sql`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS workshop_axes JSONB NOT NULL DEFAULT '["المحور التربوي","المحور القيمي","المحور المهاري","المحور القيادي","المحور الاجتماعي","المحور المعرفي"]'::jsonb`;
   await sql`CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY, access_token TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
     contact_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
@@ -48,8 +51,8 @@ async function ensureSchema() {
 
 async function seedDemoData() {
   const sql = getSql(); const t = now();
-  await sql`INSERT INTO project_settings (id,project_name,year,educator_meetings,min_development_meetings,min_trips,min_workshops,updated_at)
-    VALUES (1,'تأهيل المربي',2026,2,2,1,2,${t}) ON CONFLICT (id) DO NOTHING`;
+  await sql`INSERT INTO project_settings (id,project_name,year,educator_meetings,min_development_meetings,min_trips,min_workshops,workshop_axes,updated_at)
+    VALUES (1,'تأهيل المربي',2026,2,2,1,2,${JSON.stringify(DEFAULT_WORKSHOP_AXES)}::jsonb,${t}) ON CONFLICT (id) DO NOTHING`;
   const orgs = [
     ["org_namaa","namaa-7f2k","جمعية نماء التربوية","أحمد القحطاني","0501234567","ahmad@namaa.org",24,"جهة نشطة ومبادرة"],
     ["org_roaa","roaa-9m4p","مؤسسة رؤى الشباب","سارة الشهري","0552345678","sara@roaa.org",18,""],
@@ -60,10 +63,10 @@ async function seedDemoData() {
   for (const o of orgs) await sql`INSERT INTO organizations (id,access_token,name,contact_name,phone,email,participants,notes,archived,created_at,updated_at)
     VALUES (${o[0]},${o[1]},${o[2]},${o[3]},${o[4]},${o[5]},${o[6]},${o[7]},FALSE,${t},${t}) ON CONFLICT (id) DO NOTHING`;
   const plans = [
-    ["plan_namaa","org_namaa",["مهارات بناء الشخصية","التواصل التربوي","إدارة المبادرات"],["رحلة تعليمية ميدانية"],["تصميم البرامج التربوية","قياس الأثر"],true,"submitted",t],
-    ["plan_roaa","org_roaa",["التخطيط الشخصي","مهارات الإرشاد"],["زيارة معرفية"],["مهارات الحوار","إدارة فرق الشباب"],true,"submitted",t],
-    ["plan_athar","org_athar",["مهارات المربي"],[],["التعامل مع التحديات",""],null,"draft",null],
-    ["plan_binaa","org_binaa",["غرس القيم",""],["رحلة تطوعية"],["التعلم بالممارسة",""],true,"draft",null],
+    ["plan_namaa","org_namaa",["","",""] ,["رحلة تعليمية ميدانية"],[["المحور التربوي","المحور المهاري"],["المحور المعرفي"]],true,"submitted",t],
+    ["plan_roaa","org_roaa",["",""] ,["زيارة معرفية"],[["المحور القيمي","المحور الاجتماعي"],["المحور القيادي"]],true,"submitted",t],
+    ["plan_athar","org_athar",[""] ,[],[["المحور التربوي"],[]],null,"draft",null],
+    ["plan_binaa","org_binaa",["",""] ,["رحلة تطوعية"],[["المحور القيمي"],[]],true,"draft",null],
     ["plan_manar","org_manar",[],[],[],null,"not_started",null]
   ] as const;
   for (const p of plans) await sql`INSERT INTO annual_plans (id,organization_id,year,development_meetings,trips,workshops,evaluation_followup,status,submitted_at,updated_at)
@@ -74,7 +77,7 @@ async function seedDemoData() {
 
 async function readAll(token?: string | null) {
   await ensureSchema(); await seedDemoData(); const sql=getSql();
-  const settingsRows=await sql`SELECT id,project_name AS "projectName",year,educator_meetings AS "educatorMeetings",min_development_meetings AS "minDevelopmentMeetings",min_trips AS "minTrips",min_workshops AS "minWorkshops",updated_at AS "updatedAt" FROM project_settings WHERE id=1`;
+  const settingsRows=await sql`SELECT id,project_name AS "projectName",year,educator_meetings AS "educatorMeetings",min_development_meetings AS "minDevelopmentMeetings",min_trips AS "minTrips",min_workshops AS "minWorkshops",workshop_axes AS "workshopAxes",updated_at AS "updatedAt" FROM project_settings WHERE id=1`;
   const settings=settingsRows[0] as any;
   const organizations = token
     ? await sql`SELECT o.id,o.access_token AS "accessToken",o.name,o.contact_name AS "contactName",o.phone,o.email,o.participants,o.notes,o.updated_at AS "updatedAt",COALESCE(p.development_meetings,'[]'::jsonb)::text AS "developmentMeetings",COALESCE(p.trips,'[]'::jsonb)::text AS trips,COALESCE(p.workshops,'[]'::jsonb)::text AS workshops,CASE WHEN p.evaluation_followup IS NULL THEN NULL WHEN p.evaluation_followup THEN 1 ELSE 0 END AS "evaluationFollowup",COALESCE(p.status,'not_started') AS "planStatus",p.submitted_at AS "submittedAt",p.updated_at AS "planUpdatedAt" FROM organizations o LEFT JOIN annual_plans p ON p.organization_id=o.id AND p.year=${settings.year} WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY o.created_at DESC`
@@ -105,7 +108,7 @@ export async function POST(request:Request){
       const org=await sql`SELECT participants FROM organizations WHERE id=${b.organizationId}`; const n=Number(b.attendees)||0;if(!org[0]||n<0||n>Number(org[0].participants))return Response.json({error:"عدد الحضور يجب ألا يتجاوز عدد المشاركين"},{status:400});
       await sql`INSERT INTO attendance (id,organization_id,meeting_number,attendees,updated_at) VALUES (${uid("att")},${b.organizationId},${Number(b.meetingNumber)},${n},${t}) ON CONFLICT (organization_id,meeting_number) DO UPDATE SET attendees=EXCLUDED.attendees,updated_at=EXCLUDED.updated_at`;
     }
-    if(b.action==="saveSettings") await sql`UPDATE project_settings SET project_name=${b.projectName},year=${Number(b.year)},educator_meetings=${Number(b.educatorMeetings)},min_development_meetings=${Number(b.minDevelopmentMeetings)},min_trips=${Number(b.minTrips)},min_workshops=${Number(b.minWorkshops)},updated_at=${t} WHERE id=1`;
+    if(b.action==="saveSettings") await sql`UPDATE project_settings SET project_name=${b.projectName},year=${Number(b.year)},educator_meetings=${Number(b.educatorMeetings)},min_development_meetings=${Number(b.minDevelopmentMeetings)},min_trips=${Number(b.minTrips)},min_workshops=${Number(b.minWorkshops)},workshop_axes=${JSON.stringify(Array.isArray(b.workshopAxes)?b.workshopAxes.filter((x:unknown)=>typeof x==="string"&&x.trim()).map((x:string)=>x.trim()):DEFAULT_WORKSHOP_AXES)}::jsonb,updated_at=${t} WHERE id=1`;
     return Response.json({ok:true});
   }catch(e){console.error(e);return Response.json({error:"لم يتم حفظ البيانات. حاول مرة أخرى"},{status:500})}
 }
