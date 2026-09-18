@@ -92,7 +92,20 @@ type Attend = {
   meetingNumber: number;
   attendees: number;
 };
-type Data = { settings: SettingsT; organizations: Org[]; attendance: Attend[] };
+type Environment = {
+  id: string;
+  organizationId: string;
+  name: string;
+  preScore: number | null;
+  postScore: number | null;
+  updatedAt: string;
+};
+type Data = {
+  settings: SettingsT;
+  organizations: Org[];
+  attendance: Attend[];
+  environments: Environment[];
+};
 const parse = (v: string) => {
   try {
     const value = JSON.parse(v || "[]");
@@ -286,7 +299,7 @@ export default function ProjectApp() {
       </div>
     );
   if (assessmentToken)
-    return <AssessmentPortal data={data} />;
+    return <AssessmentPortal data={data} token={assessmentToken} reload={load} />;
   if (orgToken) return <Portal data={data} token={orgToken} reload={load} />;
   const org = data.organizations.find((x) => x.id === selected);
   if (org)
@@ -511,7 +524,7 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
           <TableHead>الاكتمال</TableHead>
           <TableHead>المشاركون</TableHead>
           {Array.from({ length: data.settings.educatorMeetings }, (_, i) => (
-            <TableHead key={i}>حضور {i + 1}</TableHead>
+            <TableHead key={i}>حضور لقاء تأهيل المربي {i + 1}</TableHead>
           ))}
           <TableHead>نسبة الحضور</TableHead>
           <TableHead>معدل الإنجاز</TableHead>
@@ -843,7 +856,7 @@ function Attendance({ data, reload }: { data: Data; reload: () => void }) {
               {Array.from(
                 { length: data.settings.educatorMeetings },
                 (_, i) => (
-                  <TableHead key={i}>اللقاء {i + 1}</TableHead>
+                  <TableHead key={i}>لقاء تأهيل المربي {i + 1}</TableHead>
                 ),
               )}
               <TableHead>المتوسط</TableHead>
@@ -1069,7 +1082,7 @@ function OrgFile({
                     <Card key={i}>
                       <CardContent className="p-5">
                         <p className="text-sm text-slate-500">
-                          حضور اللقاء {i + 1}
+                          حضور لقاء تأهيل المربي {i + 1}
                         </p>
                         <b className="mt-2 block text-3xl">
                           {a}{" "}
@@ -1335,7 +1348,9 @@ function AssessmentAdmin({ data }: { data: Data }) {
         </CardContent>
       </Card>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {data.organizations.map((org) => (
+        {data.organizations.map((org) => {
+          const environmentCount = data.environments.filter((x) => x.organizationId === org.id).length;
+          return (
           <Card key={org.id} className="border-0 shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -1343,7 +1358,7 @@ function AssessmentAdmin({ data }: { data: Data }) {
                   <h3 className="font-bold">{org.name}</h3>
                   <p className="mt-1 text-xs text-slate-500">رابط مستقل لقياس 360°</p>
                 </div>
-                <Badge variant="outline">بانتظار النموذج</Badge>
+                <Badge variant="outline">{environmentCount} بيئة تربوية</Badge>
               </div>
               <Button
                 className="mt-5 w-full"
@@ -1359,17 +1374,32 @@ function AssessmentAdmin({ data }: { data: Data }) {
               </Button>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
-function AssessmentPortal({ data }: { data: Data }) {
+function AssessmentPortal({ data, token, reload }: { data: Data; token: string; reload: () => void }) {
   const org = data.organizations[0];
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const environments = org ? data.environments.filter((x) => x.organizationId === org.id) : [];
+  const add = async () => {
+    if (!name.trim()) return toast.error("أدخل اسم البيئة التربوية");
+    setBusy(true);
+    try {
+      await post({ action: "createEnvironment", token, name });
+      setName("");
+      toast.success("تمت إضافة البيئة التربوية");
+      reload();
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
+  };
   if (!org)
     return <div className="grid min-h-screen place-items-center">رابط القياس غير صالح</div>;
   return (
     <div className="min-h-screen bg-[#f5f7f6]">
+      <Toaster position="top-center" richColors />
       <header className="bg-[#073f32] text-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-5">
           <div><b>قياس المنظمات 360°</b><p className="text-xs text-white/55">مشروع تأهيل المربي</p></div>
@@ -1377,19 +1407,9 @@ function AssessmentPortal({ data }: { data: Data }) {
         </div>
       </header>
       <main className="mx-auto max-w-4xl p-4 py-10">
-        <Card className="border-dashed">
-          <CardContent className="grid min-h-80 place-items-center p-8 text-center">
-            <div>
-              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e9f2ee] text-[#0b5b46]"><ChartNoAxesColumnIncreasing className="size-8" /></div>
-              <h1 className="mt-5 text-2xl font-bold">بوابة قياس المنظمات 360°</h1>
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-slate-500">
-                هذا الرابط مستقل عن الخطة السنوية والإنجاز. سيتم تفعيل إضافة
-                البيئات التربوية والمقيمين والقياس القبلي والبعدي والمتوسطات فور
-                اعتماد نموذج التقييم ومعاييره.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mb-6"><h1 className="text-2xl font-bold">البيئات التربوية</h1><p className="mt-2 text-sm leading-7 text-slate-500">أضف البيئات التابعة للجهة. سيُتاح لكل بيئة المقيمون والقياس القبلي والبعدي بعد اعتماد نموذج التقييم ومعاييره.</p></div>
+        <Card><CardContent className="p-5"><div className="flex flex-col gap-3 sm:flex-row"><Input value={name} onChange={e=>setName(e.target.value)} placeholder="اسم البيئة التربوية" onKeyDown={e=>e.key==="Enter"&&add()}/><Button disabled={busy} onClick={add}><Plus /> إضافة بيئة</Button></div></CardContent></Card>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">{environments.map(env=><Card key={env.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><Badge variant="outline">بيئة تربوية</Badge><h2 className="mt-2 font-bold">{env.name}</h2><p className="mt-1 text-xs text-slate-500">القياس القبلي والبعدي: بانتظار نموذج المعايير</p></div><Button size="sm" variant="ghost" className="text-rose-600" onClick={async()=>{if(!window.confirm(`حذف بيئة «${env.name}»؟`))return;try{await post({action:"deleteEnvironment",token,id:env.id});toast.success("تم حذف البيئة");reload()}catch(e:any){toast.error(e.message)}}}><Trash2 /></Button></div><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">متوسط القبلي</span><b className="mt-1 block">—</b></div><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">متوسط البعدي</span><b className="mt-1 block">—</b></div></div></CardContent></Card>)}{!environments.length&&<Card className="border-dashed md:col-span-2"><CardContent className="p-8 text-center text-sm text-slate-500">لم تتم إضافة بيئات تربوية بعد.</CardContent></Card>}</div>
       </main>
     </div>
   );
@@ -1917,7 +1937,6 @@ function Reports({ data }: { data: Data }) {
       w: rows.reduce((a, x) => a + x.c.w.length, 0),
       e: rows.filter((x) => x.o.evaluationFollowup === 1).length,
     };
-  const max = Math.max(...rows.map((x) => x.o.participants), 1);
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_1.35fr]">
       <Card>
@@ -1943,23 +1962,16 @@ function Reports({ data }: { data: Data }) {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>مقارنة المشاركين بين الجهات</CardTitle>
+          <CardTitle>القراءة النوعية لحالة الجهات</CardTitle>
+          <p className="text-sm text-slate-500">أولوية المتابعة المقترحة بناءً على الخطة والإنجاز.</p>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {rows.map(({ o }) => (
-            <div key={o.id}>
-              <div className="mb-2 flex justify-between text-sm">
-                <span>{o.name}</span>
-                <b>{o.participants}</b>
-              </div>
-              <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-[#238169]"
-                  style={{ width: `${(o.participants / max) * 100}%` }}
-                />
-              </div>
-            </div>
-          ))}
+        <CardContent className="space-y-3">
+          {rows.map(({ o, c }) => {
+            const rate=achievementRate(o);
+            const insight=o.planStatus!=="submitted"?{label:"استكمال الخطة",note:`الخطة مكتملة بنسبة ${c.progress}%`,style:"bg-amber-50 text-amber-800"}:o.achievementStatus==="not_started"?{label:"بدء رفع الإنجاز",note:"الخطة معتمدة ولم يبدأ توثيق الإنجاز",style:"bg-sky-50 text-sky-800"}:rate>=80?{label:"أداء متقدم",note:`معدل الإنجاز ${rate}%`,style:"bg-emerald-50 text-emerald-800"}:{label:"متابعة الإنجاز",note:`معدل الإنجاز ${rate}% ويحتاج استكمالًا`,style:"bg-rose-50 text-rose-800"};
+            return <div key={o.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4"><div><b className="text-sm">{o.name}</b><p className="mt-1 text-xs text-slate-500">{insight.note}</p></div><Badge className={insight.style}>{insight.label}</Badge></div>
+          })}
+          {!rows.length&&<p className="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">ستظهر القراءة النوعية بعد إضافة الجهات.</p>}
         </CardContent>
       </Card>
     </div>

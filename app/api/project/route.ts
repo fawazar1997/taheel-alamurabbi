@@ -62,133 +62,16 @@ async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_attendance_org_meeting ON attendance(organization_id, meeting_number)`;
 }
 
-async function seedDemoData() {
+async function ensureProjectSettings() {
   const sql = getSql();
   const t = now();
   await sql`INSERT INTO project_settings (id,project_name,year,educator_meetings,min_development_meetings,min_trips,min_workshops,workshop_axes,updated_at)
     VALUES (1,'تأهيل المربي',2026,2,2,1,2,${JSON.stringify(DEFAULT_WORKSHOP_AXES)}::jsonb,${t}) ON CONFLICT (id) DO NOTHING`;
-  const orgs = [
-    [
-      "org_namaa",
-      "namaa-7f2k",
-      "جمعية نماء التربوية",
-      "أحمد القحطاني",
-      "0501234567",
-      "ahmad@namaa.org",
-      24,
-      "جهة نشطة ومبادرة",
-    ],
-    [
-      "org_roaa",
-      "roaa-9m4p",
-      "مؤسسة رؤى الشباب",
-      "سارة الشهري",
-      "0552345678",
-      "sara@roaa.org",
-      18,
-      "",
-    ],
-    [
-      "org_athar",
-      "athar-3x8d",
-      "مركز أثر للتنمية",
-      "محمد عسيري",
-      "0533456789",
-      "m.aseeri@athar.org",
-      30,
-      "تحتاج متابعة الخطة",
-    ],
-    [
-      "org_binaa",
-      "binaa-6q1w",
-      "جمعية بناء القيم",
-      "نورة الأحمري",
-      "0564567890",
-      "noura@binaa.org",
-      15,
-      "",
-    ],
-    [
-      "org_manar",
-      "manar-2h5n",
-      "مركز منار التربوي",
-      "خالد الشهراني",
-      "0545678901",
-      "khaled@manar.org",
-      22,
-      "",
-    ],
-  ] as const;
-  for (const o of orgs)
-    await sql`INSERT INTO organizations (id,access_token,name,contact_name,phone,email,participants,notes,archived,created_at,updated_at)
-    VALUES (${o[0]},${o[1]},${o[2]},${o[3]},${o[4]},${o[5]},${o[6]},${o[7]},FALSE,${t},${t}) ON CONFLICT (id) DO NOTHING`;
-  const plans = [
-    [
-      "plan_namaa",
-      "org_namaa",
-      ["", "", ""],
-      ["رحلة تعليمية ميدانية"],
-      [["المحور التربوي", "المحور المهاري"], ["المحور المعرفي"]],
-      true,
-      "submitted",
-      t,
-    ],
-    [
-      "plan_roaa",
-      "org_roaa",
-      ["", ""],
-      ["زيارة معرفية"],
-      [["المحور القيمي", "المحور الاجتماعي"], ["المحور القيادي"]],
-      true,
-      "submitted",
-      t,
-    ],
-    [
-      "plan_athar",
-      "org_athar",
-      [""],
-      [],
-      [["المحور التربوي"], []],
-      null,
-      "draft",
-      null,
-    ],
-    [
-      "plan_binaa",
-      "org_binaa",
-      ["", ""],
-      ["رحلة تطوعية"],
-      [["المحور القيمي"], []],
-      true,
-      "draft",
-      null,
-    ],
-    ["plan_manar", "org_manar", [], [], [], null, "not_started", null],
-  ] as const;
-  for (const p of plans)
-    await sql`INSERT INTO annual_plans (id,organization_id,year,development_meetings,trips,workshops,evaluation_followup,status,submitted_at,updated_at)
-    VALUES (${p[0]},${p[1]},2026,${JSON.stringify(p[2])}::jsonb,${JSON.stringify(p[3])}::jsonb,${JSON.stringify(p[4])}::jsonb,${p[5]},${p[6]},${p[7]},${t}) ON CONFLICT (organization_id,year) DO NOTHING`;
-  const attendanceRows = [
-    ["org_namaa", 1, 22],
-    ["org_namaa", 2, 21],
-    ["org_roaa", 1, 15],
-    ["org_roaa", 2, 16],
-    ["org_athar", 1, 20],
-    ["org_athar", 2, 0],
-    ["org_binaa", 1, 12],
-    ["org_binaa", 2, 11],
-    ["org_manar", 1, 0],
-    ["org_manar", 2, 0],
-  ] as const;
-  for (let i = 0; i < attendanceRows.length; i++) {
-    const a = attendanceRows[i];
-    await sql`INSERT INTO attendance (id,organization_id,meeting_number,attendees,updated_at) VALUES (${`att_${i}`},${a[0]},${a[1]},${a[2]},${t}) ON CONFLICT (organization_id,meeting_number) DO NOTHING`;
-  }
 }
 
 async function readAll(token?: string | null) {
   await ensureSchema();
-  await seedDemoData();
+  await ensureProjectSettings();
   const sql = getSql();
   const settingsRows =
     await sql`SELECT id,project_name AS "projectName",year,educator_meetings AS "educatorMeetings",min_development_meetings AS "minDevelopmentMeetings",min_trips AS "minTrips",min_workshops AS "minWorkshops",workshop_axes AS "workshopAxes",updated_at AS "updatedAt" FROM project_settings WHERE id=1`;
@@ -199,7 +82,10 @@ async function readAll(token?: string | null) {
   const attendanceRows = token
     ? []
     : await sql`SELECT organization_id AS "organizationId",meeting_number AS "meetingNumber",attendees,updated_at AS "updatedAt" FROM attendance`;
-  return { settings, organizations, attendance: attendanceRows };
+  const environments = token
+    ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.pre_score AS "preScore",e.post_score AS "postScore",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
+    : await sql`SELECT id,organization_id AS "organizationId",name,pre_score AS "preScore",post_score AS "postScore",updated_at AS "updatedAt" FROM learning_environments ORDER BY created_at`;
+  return { settings, organizations, attendance: attendanceRows, environments };
 }
 
 export async function GET(request: Request) {
@@ -242,6 +128,18 @@ export async function POST(request: Request) {
       await sql`UPDATE organizations SET archived=TRUE,updated_at=${t} WHERE id=${b.id}`;
     if (b.action === "deleteOrg")
       await sql`DELETE FROM organizations WHERE id=${b.id}`;
+    if (b.action === "createEnvironment") {
+      const org = await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
+      if (!org[0]) return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
+      const name = String(b.name || "").trim();
+      if (!name) return Response.json({ error: "أدخل اسم البيئة التربوية" }, { status: 400 });
+      await sql`INSERT INTO learning_environments (id,organization_id,name,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},${t},${t})`;
+    }
+    if (b.action === "deleteEnvironment") {
+      const org = await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
+      if (!org[0]) return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
+      await sql`DELETE FROM learning_environments WHERE id=${b.id} AND organization_id=${org[0].id as string}`;
+    }
     if (b.action === "savePlan") {
       const org =
         await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
