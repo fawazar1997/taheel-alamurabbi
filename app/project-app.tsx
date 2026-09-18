@@ -1060,6 +1060,7 @@ function OrgFile({
             <TabsTrigger value="summary">ملخص الجهة</TabsTrigger>
             <TabsTrigger value="plan">الخطة السنوية</TabsTrigger>
             <TabsTrigger value="achievement">الإنجاز</TabsTrigger>
+            <TabsTrigger value="environments">قياس البيئة</TabsTrigger>
             <TabsTrigger value="attendance">حضور لقاءات المربي</TabsTrigger>
           </TabsList>
           <TabsContent value="summary">
@@ -1070,6 +1071,9 @@ function OrgFile({
           </TabsContent>
           <TabsContent value="achievement">
             <AchievementRead org={org} />
+          </TabsContent>
+          <TabsContent value="environments">
+            <EnvironmentManager org={org} data={data} token={org.accessToken} reload={reload} />
           </TabsContent>
           <TabsContent value="attendance">
             <div className="grid gap-4 md:grid-cols-3">
@@ -1380,21 +1384,14 @@ function AssessmentAdmin({ data }: { data: Data }) {
     </div>
   );
 }
+function EnvironmentManager({org,data,token,reload}:{org:Org;data:Data;token:string;reload:()=>void}) {
+  const [name,setName]=useState(""),[busy,setBusy]=useState(false);
+  const environments=data.environments.filter(x=>x.organizationId===org.id);
+  const add=async()=>{if(!name.trim())return toast.error("أدخل اسم البيئة التربوية");setBusy(true);try{await post({action:"createEnvironment",token,name});setName("");toast.success("تمت إضافة البيئة التربوية");reload()}catch(e:any){toast.error(e.message)}finally{setBusy(false)}};
+  return <div className="space-y-5"><div><h2 className="text-xl font-bold">قياس البيئة</h2><p className="mt-2 text-sm leading-7 text-slate-500">إدارة البيئات التربوية التابعة للجهة. ستظهر نتائج القياس القبلي والبعدي والمتوسط والتحسن لكل بيئة بعد إضافة نموذج المعايير.</p></div><Card><CardContent className="p-5"><div className="flex flex-col gap-3 sm:flex-row"><Input value={name} onChange={e=>setName(e.target.value)} placeholder="اسم البيئة التربوية" onKeyDown={e=>e.key==="Enter"&&add()}/><Button disabled={busy} onClick={add}><Plus/> إضافة بيئة</Button></div></CardContent></Card><div className="grid gap-4 md:grid-cols-2">{environments.map(env=><Card key={env.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><Badge variant="outline">بيئة تربوية</Badge><h3 className="mt-2 font-bold">{env.name}</h3><p className="mt-1 text-xs text-slate-500">قياس البيئة: بانتظار نموذج المعايير</p></div><Button size="sm" variant="ghost" className="text-rose-600" onClick={async()=>{if(!window.confirm(`حذف بيئة «${env.name}»؟`))return;try{await post({action:"deleteEnvironment",token,id:env.id});toast.success("تم حذف البيئة");reload()}catch(e:any){toast.error(e.message)}}}><Trash2/></Button></div><div className="mt-4 grid grid-cols-3 gap-2"><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">القبلي</span><b className="mt-1 block">{env.preScore??"—"}</b></div><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">البعدي</span><b className="mt-1 block">{env.postScore??"—"}</b></div><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">التحسن</span><b className="mt-1 block">—</b></div></div></CardContent></Card>)}{!environments.length&&<Card className="border-dashed md:col-span-2"><CardContent className="p-8 text-center text-sm text-slate-500">لم تتم إضافة بيئات تربوية لهذه الجهة بعد.</CardContent></Card>}</div></div>;
+}
 function AssessmentPortal({ data, token, reload }: { data: Data; token: string; reload: () => void }) {
   const org = data.organizations[0];
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const environments = org ? data.environments.filter((x) => x.organizationId === org.id) : [];
-  const add = async () => {
-    if (!name.trim()) return toast.error("أدخل اسم البيئة التربوية");
-    setBusy(true);
-    try {
-      await post({ action: "createEnvironment", token, name });
-      setName("");
-      toast.success("تمت إضافة البيئة التربوية");
-      reload();
-    } catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
-  };
   if (!org)
     return <div className="grid min-h-screen place-items-center">رابط القياس غير صالح</div>;
   return (
@@ -1407,9 +1404,7 @@ function AssessmentPortal({ data, token, reload }: { data: Data; token: string; 
         </div>
       </header>
       <main className="mx-auto max-w-4xl p-4 py-10">
-        <div className="mb-6"><h1 className="text-2xl font-bold">البيئات التربوية</h1><p className="mt-2 text-sm leading-7 text-slate-500">أضف البيئات التابعة للجهة. سيُتاح لكل بيئة المقيمون والقياس القبلي والبعدي بعد اعتماد نموذج التقييم ومعاييره.</p></div>
-        <Card><CardContent className="p-5"><div className="flex flex-col gap-3 sm:flex-row"><Input value={name} onChange={e=>setName(e.target.value)} placeholder="اسم البيئة التربوية" onKeyDown={e=>e.key==="Enter"&&add()}/><Button disabled={busy} onClick={add}><Plus /> إضافة بيئة</Button></div></CardContent></Card>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">{environments.map(env=><Card key={env.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><Badge variant="outline">بيئة تربوية</Badge><h2 className="mt-2 font-bold">{env.name}</h2><p className="mt-1 text-xs text-slate-500">القياس القبلي والبعدي: بانتظار نموذج المعايير</p></div><Button size="sm" variant="ghost" className="text-rose-600" onClick={async()=>{if(!window.confirm(`حذف بيئة «${env.name}»؟`))return;try{await post({action:"deleteEnvironment",token,id:env.id});toast.success("تم حذف البيئة");reload()}catch(e:any){toast.error(e.message)}}}><Trash2 /></Button></div><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">متوسط القبلي</span><b className="mt-1 block">—</b></div><div className="rounded-xl bg-slate-50 p-3 text-center"><span className="text-xs text-slate-500">متوسط البعدي</span><b className="mt-1 block">—</b></div></div></CardContent></Card>)}{!environments.length&&<Card className="border-dashed md:col-span-2"><CardContent className="p-8 text-center text-sm text-slate-500">لم تتم إضافة بيئات تربوية بعد.</CardContent></Card>}</div>
+        <EnvironmentManager org={org} data={data} token={token} reload={reload}/>
       </main>
     </div>
   );
