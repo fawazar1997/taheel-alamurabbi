@@ -100,12 +100,80 @@ type Environment = {
   postScore: number | null;
   updatedAt: string;
 };
+type AssessmentResponse = {
+  id: string;
+  environmentId: string;
+  phase: "pre" | "post";
+  evaluatorName: string;
+  evaluatorRole: string;
+  answers: string;
+  strengths: string;
+  improvementArea: string;
+  submittedAt: string;
+};
 type Data = {
   settings: SettingsT;
   organizations: Org[];
   attendance: Attend[];
   environments: Environment[];
+  assessmentResponses: AssessmentResponse[];
 };
+const ASSESSMENT_AXES = [
+  {
+    name: "وضوح التوجه التربوي",
+    questions: [
+      "لدى البيئة أهداف تربوية واضحة ومعلنة.",
+      "توجد قيم تربوية محددة تسعى البيئة لتعزيزها.",
+      "البرامج والأنشطة مرتبطة بالأهداف التربوية للبيئة.",
+      "يعرف المربون الأدوار والنتائج التربوية المتوقعة منهم.",
+    ],
+  },
+  {
+    name: "كفاءة المربين",
+    questions: [
+      "يمتلك المربون المهارات اللازمة للتعامل مع المشاركين.",
+      "يستطيع المربون بناء علاقة تربوية إيجابية مع المشاركين.",
+      "يراعي المربون الفروق الفردية بين المشاركين.",
+      "يحصل المربون على تطوير وتأهيل مستمر.",
+    ],
+  },
+  {
+    name: "التخطيط والتنفيذ",
+    questions: [
+      "توجد خطة تربوية واضحة للبيئة.",
+      "تنفذ البرامج وفق خطة زمنية محددة.",
+      "تتنوع الأساليب والأنشطة المستخدمة لتحقيق الأهداف.",
+      "تتم مراجعة جودة تنفيذ البرامج بشكل دوري.",
+    ],
+  },
+  {
+    name: "المتابعة والتقويم",
+    questions: [
+      "توجد آلية واضحة لمتابعة تطور المشاركين.",
+      "يتم توثيق الملاحظات والتغيرات على المشاركين.",
+      "تستخدم نتائج التقييم في تحسين البرامج.",
+      "توجد متابعة لأداء المربين وتقديم تغذية راجعة لهم.",
+    ],
+  },
+  {
+    name: "البيئة والعلاقات التربوية",
+    questions: [
+      "توفر البيئة مناخًا آمنًا ومحفزًا للمشاركين.",
+      "تسود علاقات إيجابية قائمة على الاحترام والثقة.",
+      "يشعر المشاركون بالانتماء للبيئة التربوية.",
+      "تشجع البيئة المشاركين على المبادرة وتحمل المسؤولية.",
+    ],
+  },
+  {
+    name: "الأثر والاستدامة",
+    questions: [
+      "تظهر آثار البرامج التربوية على سلوك المشاركين.",
+      "تستطيع البيئة تحديد جوانب التحسن لدى المشاركين.",
+      "توجد ممارسات تضمن استمرار العمل التربوي وعدم ارتباطه بأفراد محددين.",
+      "تستفيد البيئة من نتائجها السابقة في تطوير خططها المستقبلية.",
+    ],
+  },
+] as const;
 const parse = (v: string) => {
   try {
     const value = JSON.parse(v || "[]");
@@ -227,6 +295,37 @@ function achievementRate(o: Org) {
     0,
   );
   return Math.round(points / items.length);
+}
+function assessmentPhaseStats(responses: AssessmentResponse[]) {
+  const answerSets = responses
+    .map((r) => parse(r.answers).map(Number))
+    .filter((a) => a.length === 24);
+  const axisScores = ASSESSMENT_AXES.map((_, axisIndex) =>
+    answerSets.length
+      ? Math.round(
+          answerSets.reduce(
+            (sum, answers) =>
+              sum +
+              (answers
+                .slice(axisIndex * 4, axisIndex * 4 + 4)
+                .reduce((a, x) => a + x, 0) /
+                20) *
+                100,
+            0,
+          ) / answerSets.length,
+        )
+      : null,
+  );
+  const total = answerSets.length
+    ? Math.round(
+        answerSets.reduce(
+          (sum, answers) =>
+            sum + (answers.reduce((a, x) => a + x, 0) / 120) * 100,
+          0,
+        ) / answerSets.length,
+      )
+    : null;
+  return { count: answerSets.length, total, axisScores };
 }
 const planLabel = (o: Org, p: number) =>
   o.planStatus === "submitted"
@@ -1467,80 +1566,161 @@ function EnvironmentManager({
         </CardContent>
       </Card>
       <div className="grid gap-4 md:grid-cols-2">
-        {environments.map((env) => (
-          <Card key={env.id}>
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <Badge variant="outline">بيئة تربوية</Badge>
-                  <h3 className="mt-2 font-bold">{env.name}</h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    قياس البيئة: بانتظار نموذج المعايير
-                  </p>
+        {environments.map((env) => {
+          const responses = (data.assessmentResponses || []).filter(
+            (x) => x.environmentId === env.id,
+          );
+          const pre = assessmentPhaseStats(
+            responses.filter((x) => x.phase === "pre"),
+          );
+          const postStats = assessmentPhaseStats(
+            responses.filter((x) => x.phase === "post"),
+          );
+          const preTotal =
+            pre.total ?? (env.preScore == null ? null : Number(env.preScore));
+          const postTotal =
+            postStats.total ??
+            (env.postScore == null ? null : Number(env.postScore));
+          const improvement =
+            preTotal !== null && postTotal !== null
+              ? Math.round((postTotal - preTotal) * 10) / 10
+              : null;
+          return (
+            <Card key={env.id}>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Badge variant="outline">بيئة تربوية</Badge>
+                    <h3 className="mt-2 font-bold">{env.name}</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {pre.count} مقيم قبلي · {postStats.count} مقيم بعدي
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-rose-600"
+                    onClick={async () => {
+                      if (!window.confirm(`حذف بيئة «${env.name}»؟`)) return;
+                      try {
+                        await post({
+                          action: "deleteEnvironment",
+                          token,
+                          id: env.id,
+                        });
+                        toast.success("تم حذف البيئة");
+                        reload();
+                      } catch (e: any) {
+                        toast.error(e.message);
+                      }
+                    }}
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-rose-600"
-                  onClick={async () => {
-                    if (!window.confirm(`حذف بيئة «${env.name}»؟`)) return;
-                    try {
-                      await post({
-                        action: "deleteEnvironment",
-                        token,
-                        id: env.id,
-                      });
-                      toast.success("تم حذف البيئة");
-                      reload();
-                    } catch (e: any) {
-                      toast.error(e.message);
-                    }
-                  }}
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <span className="text-xs text-slate-500">القبلي</span>
-                  <b className="mt-1 block">{env.preScore ?? "—"}</b>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-slate-50 p-3 text-center">
+                    <span className="text-xs text-slate-500">القبلي</span>
+                    <b className="mt-1 block">
+                      {preTotal !== null ? `${preTotal}%` : "—"}
+                    </b>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 text-center">
+                    <span className="text-xs text-slate-500">البعدي</span>
+                    <b className="mt-1 block">
+                      {postTotal !== null ? `${postTotal}%` : "—"}
+                    </b>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 text-center">
+                    <span className="text-xs text-slate-500">التحسن</span>
+                    <b
+                      className={`mt-1 block ${improvement !== null && improvement > 0 ? "text-emerald-700" : ""}`}
+                    >
+                      {improvement !== null
+                        ? `${improvement > 0 ? "+" : ""}${improvement} نقطة`
+                        : "—"}
+                    </b>
+                  </div>
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <span className="text-xs text-slate-500">البعدي</span>
-                  <b className="mt-1 block">{env.postScore ?? "—"}</b>
+                {(pre.count > 0 || postStats.count > 0) && (
+                  <div className="mt-4 space-y-2 rounded-2xl border p-3">
+                    {ASSESSMENT_AXES.map((axis, i) => (
+                      <div
+                        key={axis.name}
+                        className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs"
+                      >
+                        <span>{axis.name}</span>
+                        <span className="rounded-lg bg-slate-50 px-2 py-1">
+                          قبلي{" "}
+                          {pre.axisScores[i] !== null
+                            ? `${pre.axisScores[i]}%`
+                            : "—"}
+                        </span>
+                        <span className="rounded-lg bg-slate-50 px-2 py-1">
+                          بعدي{" "}
+                          {postStats.axisScores[i] !== null
+                            ? `${postStats.axisScores[i]}%`
+                            : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {responses.some((x) => x.strengths || x.improvementArea) && (
+                  <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-600">
+                      آخر الملاحظات النوعية
+                    </p>
+                    {responses
+                      .filter((x) => x.strengths || x.improvementArea)
+                      .slice(0, 2)
+                      .map((x) => (
+                        <div
+                          key={x.id}
+                          className="mt-2 border-t pt-2 text-xs text-slate-600"
+                        >
+                          {x.strengths && (
+                            <p>
+                              <b>قوة:</b> {x.strengths}
+                            </p>
+                          )}
+                          {x.improvementArea && (
+                            <p className="mt-1">
+                              <b>تطوير:</b> {x.improvementArea}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${location.origin}/?assessment=${token}&environment=${env.id}&phase=pre`,
+                      );
+                      toast.success("تم نسخ رابط القياس القبلي");
+                    }}
+                  >
+                    <Copy /> رابط القياس القبلي
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${location.origin}/?assessment=${token}&environment=${env.id}&phase=post`,
+                      );
+                      toast.success("تم نسخ رابط القياس البعدي");
+                    }}
+                  >
+                    <Copy /> رابط القياس البعدي
+                  </Button>
                 </div>
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <span className="text-xs text-slate-500">التحسن</span>
-                  <b className="mt-1 block">—</b>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      `${location.origin}/?assessment=${token}&environment=${env.id}&phase=pre`,
-                    );
-                    toast.success("تم نسخ رابط القياس القبلي");
-                  }}
-                >
-                  <Copy /> رابط القياس القبلي
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      `${location.origin}/?assessment=${token}&environment=${env.id}&phase=post`,
-                    );
-                    toast.success("تم نسخ رابط القياس البعدي");
-                  }}
-                >
-                  <Copy /> رابط القياس البعدي
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
         {!environments.length && (
           <Card className="border-dashed md:col-span-2">
             <CardContent className="p-8 text-center text-sm text-slate-500">
@@ -1548,6 +1728,180 @@ function EnvironmentManager({
             </CardContent>
           </Card>
         )}
+      </div>
+    </div>
+  );
+}
+function AssessmentEntryForm({
+  org,
+  environment,
+  phase,
+  token,
+}: {
+  org: Org;
+  environment: Environment;
+  phase: "pre" | "post";
+  token: string;
+}) {
+  const [evaluatorName, setEvaluatorName] = useState(""),
+    [evaluatorRole, setEvaluatorRole] = useState(""),
+    [strengths, setStrengths] = useState(""),
+    [improvementArea, setImprovementArea] = useState(""),
+    [answers, setAnswers] = useState<(number | null)[]>(Array(24).fill(null)),
+    [busy, setBusy] = useState(false),
+    [submitted, setSubmitted] = useState(false);
+  const answered = answers.filter((x) => x !== null).length;
+  const setAnswer = (index: number, value: number) =>
+    setAnswers(answers.map((x, i) => (i === index ? value : x)));
+  const submit = async () => {
+    if (!evaluatorName.trim() || !evaluatorRole.trim())
+      return toast.error("أدخل اسم المقيم وصفته أو علاقته بالبيئة");
+    if (answered !== 24)
+      return toast.error(`أكمل جميع العبارات، المتبقي ${24 - answered}`);
+    setBusy(true);
+    try {
+      await post({
+        action: "saveAssessment",
+        token,
+        environmentId: environment.id,
+        phase,
+        evaluatorName,
+        evaluatorRole,
+        answers,
+        strengths,
+        improvementArea,
+      });
+      setSubmitted(true);
+      toast.success("تم إرسال التقييم بنجاح");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (submitted)
+    return (
+      <Card>
+        <CardContent className="grid min-h-80 place-items-center p-8 text-center">
+          <div>
+            <div className="mx-auto grid size-16 place-items-center rounded-full bg-emerald-100 text-2xl text-emerald-700">
+              ✓
+            </div>
+            <h1 className="mt-4 text-2xl font-bold">تم استلام التقييم</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              شكرًا لك. تمت إضافة تقييمك المستقل إلى متوسط البيئة التربوية.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  let questionIndex = 0;
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader>
+          <Badge variant="outline" className="w-fit">
+            {phase === "pre" ? "القياس القبلي" : "القياس البعدي"}
+          </Badge>
+          <CardTitle>{environment.name}</CardTitle>
+          <p className="text-sm text-slate-500">
+            {org.name} · اختر درجة من 1 إلى 5 لكل عبارة.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>اسم المقيم</Label>
+            <Input
+              className="mt-2"
+              value={evaluatorName}
+              onChange={(e) => setEvaluatorName(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>الصفة أو العلاقة بالبيئة</Label>
+            <Input
+              className="mt-2"
+              value={evaluatorRole}
+              onChange={(e) => setEvaluatorRole(e.target.value)}
+              placeholder="مربي، مشرف، قائد البيئة..."
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm">اكتمال التقييم</span>
+            <b>{answered}/24</b>
+          </div>
+          <Progress className="mt-3" value={(answered / 24) * 100} />
+          <div className="mt-4 grid grid-cols-5 gap-1 text-center text-[11px] text-slate-500">
+            <span>1 غير متحقق</span>
+            <span>2 ضعيف</span>
+            <span>3 متوسط</span>
+            <span>4 كبير</span>
+            <span>5 عالٍ جدًا</span>
+          </div>
+        </CardContent>
+      </Card>
+      {ASSESSMENT_AXES.map((axis, axisIndex) => (
+        <Card key={axis.name}>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {axisIndex + 1}. {axis.name}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {axis.questions.map((question) => {
+              const index = questionIndex++;
+              return (
+                <div key={question} className="rounded-2xl border p-4">
+                  <p className="text-sm font-medium leading-7">{question}</p>
+                  <div className="mt-3 grid grid-cols-5 gap-2" dir="ltr">
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <button
+                        type="button"
+                        key={value}
+                        onClick={() => setAnswer(index, value)}
+                        className={`rounded-xl border py-2 text-sm font-bold transition ${answers[index] === value ? "border-[#0b5b46] bg-[#0b5b46] text-white" : "bg-white hover:bg-slate-50"}`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ))}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">أسئلة نوعية</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div>
+            <Label>ما أبرز نقاط القوة في البيئة التربوية؟</Label>
+            <Textarea
+              className="mt-2"
+              value={strengths}
+              onChange={(e) => setStrengths(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>ما أهم جانب يحتاج إلى تطوير؟</Label>
+            <Textarea
+              className="mt-2"
+              value={improvementArea}
+              onChange={(e) => setImprovementArea(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <div className="sticky bottom-3 rounded-2xl border bg-white/95 p-4 text-left shadow-lg backdrop-blur">
+        <Button disabled={busy || answered !== 24} onClick={submit}>
+          <Send /> إرسال التقييم
+        </Button>
       </div>
     </div>
   );
@@ -1592,29 +1946,18 @@ function AssessmentPortal({
       <main className="mx-auto max-w-4xl p-4 py-10">
         {environmentId && (phase === "pre" || phase === "post") ? (
           selectedEnvironment ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <Badge variant="outline">
-                  {phase === "pre" ? "القياس القبلي" : "القياس البعدي"}
-                </Badge>
-                <h1 className="mt-4 text-2xl font-bold">
-                  {selectedEnvironment.name}
-                </h1>
-                <p className="mt-2 text-sm text-slate-500">{org.name}</p>
-                <div className="mx-auto mt-7 max-w-xl rounded-2xl border border-dashed bg-slate-50 p-7">
-                  <ChartNoAxesColumnIncreasing className="mx-auto size-9 text-[#0b5b46]" />
-                  <h2 className="mt-3 font-bold">
-                    نموذج {phase === "pre" ? "القياس القبلي" : "القياس البعدي"}
-                  </h2>
-                  <p className="mt-2 text-sm leading-7 text-slate-500">
-                    الرابط مخصص لهذه البيئة ومرحلة القياس. ستظهر أسئلة التقييم هنا
-                    فور إضافة نموذج المعايير وآلية الاحتساب.
-                  </p>
-                </div>
+            <AssessmentEntryForm
+              org={org}
+              environment={selectedEnvironment}
+              phase={phase}
+              token={token}
+            />
+          ) : (
+            <Card className="border-rose-200">
+              <CardContent className="p-8 text-center text-rose-700">
+                رابط البيئة غير صالح أو تم حذف البيئة.
               </CardContent>
             </Card>
-          ) : (
-            <Card className="border-rose-200"><CardContent className="p-8 text-center text-rose-700">رابط البيئة غير صالح أو تم حذف البيئة.</CardContent></Card>
           )
         ) : (
           <EnvironmentManager

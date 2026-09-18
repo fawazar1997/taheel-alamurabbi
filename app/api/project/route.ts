@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 const now = () => new Date().toISOString();
 const uid = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
+const ASSESSMENT_QUESTION_COUNT = 24;
 const DEFAULT_WORKSHOP_AXES = [
   "المحور التربوي",
   "المحور القيمي",
@@ -57,9 +58,21 @@ async function ensureSchema() {
     name TEXT NOT NULL, pre_score NUMERIC, post_score NUMERIC,
     created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS environment_assessments (
+    id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL REFERENCES learning_environments(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('pre','post')),
+    evaluator_name TEXT NOT NULL,
+    evaluator_role TEXT NOT NULL,
+    answers JSONB NOT NULL,
+    strengths TEXT NOT NULL DEFAULT '',
+    improvement_area TEXT NOT NULL DEFAULT '',
+    submitted_at TIMESTAMPTZ NOT NULL
+  )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_organizations_archived ON organizations(archived)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_annual_plans_org_year ON annual_plans(organization_id, year)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_attendance_org_meeting ON attendance(organization_id, meeting_number)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_environment_assessments_environment_phase ON environment_assessments(environment_id,phase)`;
 }
 
 async function ensureProjectSettings() {
@@ -85,7 +98,16 @@ async function readAll(token?: string | null) {
   const environments = token
     ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.pre_score AS "preScore",e.post_score AS "postScore",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
     : await sql`SELECT id,organization_id AS "organizationId",name,pre_score AS "preScore",post_score AS "postScore",updated_at AS "updatedAt" FROM learning_environments ORDER BY created_at`;
-  return { settings, organizations, attendance: attendanceRows, environments };
+  const assessmentResponses = token
+    ? []
+    : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
+  return {
+    settings,
+    organizations,
+    attendance: attendanceRows,
+    environments,
+    assessmentResponses,
+  };
 }
 
 export async function GET(request: Request) {
@@ -129,16 +151,71 @@ export async function POST(request: Request) {
     if (b.action === "deleteOrg")
       await sql`DELETE FROM organizations WHERE id=${b.id}`;
     if (b.action === "createEnvironment") {
-      const org = await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
-      if (!org[0]) return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
+      const org =
+        await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
+      if (!org[0])
+        return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
       const name = String(b.name || "").trim();
-      if (!name) return Response.json({ error: "أدخل اسم البيئة التربوية" }, { status: 400 });
+      if (!name)
+        return Response.json(
+          { error: "أدخل اسم البيئة التربوية" },
+          { status: 400 },
+        );
       await sql`INSERT INTO learning_environments (id,organization_id,name,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},${t},${t})`;
     }
     if (b.action === "deleteEnvironment") {
-      const org = await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
-      if (!org[0]) return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
+      const org =
+        await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
+      if (!org[0])
+        return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
       await sql`DELETE FROM learning_environments WHERE id=${b.id} AND organization_id=${org[0].id as string}`;
+    }
+    if (b.action === "saveAssessment") {
+      const phase = b.phase === "pre" || b.phase === "post" ? b.phase : null;
+      const answers = Array.isArray(b.answers) ? b.answers.map(Number) : [];
+      if (
+        !phase ||
+        answers.length !== ASSESSMENT_QUESTION_COUNT ||
+        answers.some((x: number) => !Number.isInteger(x) || x < 1 || x > 5)
+      )
+        return Response.json(
+          { error: "أجب عن جميع عبارات القياس بدرجة من 1 إلى 5" },
+          { status: 400 },
+        );
+      const evaluatorName = String(b.evaluatorName || "").trim();
+      const evaluatorRole = String(b.evaluatorRole || "").trim();
+      if (!evaluatorName || !evaluatorRole)
+        return Response.json(
+          { error: "أدخل اسم المقيم وصفته أو علاقته بالبيئة" },
+          { status: 400 },
+        );
+      const env =
+        await sql`SELECT e.id FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE e.id=${b.environmentId} AND o.access_token=${b.token} AND o.archived=FALSE`;
+      if (!env[0])
+        return Response.json(
+          { error: "رابط البيئة غير صالح" },
+          { status: 404 },
+        );
+      await sql`INSERT INTO environment_assessments (id,environment_id,phase,evaluator_name,evaluator_role,answers,strengths,improvement_area,submitted_at) VALUES (${uid("assessment")},${b.environmentId},${phase},${evaluatorName},${evaluatorRole},${JSON.stringify(answers)}::jsonb,${String(b.strengths || "").trim()},${String(b.improvementArea || "").trim()},${t})`;
+      const responseRows =
+        await sql`SELECT answers::text AS answers FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase=${phase}`;
+      const average =
+        Math.round(
+          (responseRows.reduce((sum, row) => {
+            const values = JSON.parse(String(row.answers)) as number[];
+            return (
+              sum +
+              (values.reduce((a, x) => a + x, 0) / (values.length * 5)) * 100
+            );
+          }, 0) /
+            responseRows.length) *
+            10,
+        ) / 10;
+      if (phase === "pre")
+        await sql`UPDATE learning_environments SET pre_score=${average},updated_at=${t} WHERE id=${b.environmentId}`;
+      else
+        await sql`UPDATE learning_environments SET post_score=${average},updated_at=${t} WHERE id=${b.environmentId}`;
+      return Response.json({ ok: true, score: average });
     }
     if (b.action === "savePlan") {
       const org =
