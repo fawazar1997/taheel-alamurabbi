@@ -1,4 +1,5 @@
 import { getSql } from "@/db";
+import { ensurePlanDocumentSchema } from "@/lib/plan-document-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ async function ensureSchema() {
   await sql`ALTER TABLE annual_plans ADD COLUMN IF NOT EXISTS achievement_data JSONB NOT NULL DEFAULT '[]'::jsonb`;
   await sql`ALTER TABLE annual_plans ADD COLUMN IF NOT EXISTS achievement_status TEXT NOT NULL DEFAULT 'not_started'`;
   await sql`ALTER TABLE annual_plans ADD COLUMN IF NOT EXISTS achievement_submitted_at TIMESTAMPTZ`;
+  await ensurePlanDocumentSchema();
   await sql`CREATE TABLE IF NOT EXISTS attendance (
     id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     meeting_number INTEGER NOT NULL, attendees INTEGER NOT NULL DEFAULT 0,
@@ -92,6 +94,9 @@ async function readAll(token?: string | null) {
   const organizations = token
     ? await sql`SELECT o.id,o.access_token AS "accessToken",o.name,o.contact_name AS "contactName",o.phone,o.email,o.participants,o.notes,o.updated_at AS "updatedAt",COALESCE(p.development_meetings,'[]'::jsonb)::text AS "developmentMeetings",COALESCE(p.trips,'[]'::jsonb)::text AS trips,COALESCE(p.workshops,'[]'::jsonb)::text AS workshops,CASE WHEN p.evaluation_followup IS NULL THEN NULL WHEN p.evaluation_followup THEN 1 ELSE 0 END AS "evaluationFollowup",COALESCE(p.status,'not_started') AS "planStatus",p.submitted_at AS "submittedAt",p.updated_at AS "planUpdatedAt",COALESCE(p.achievement_data,'[]'::jsonb)::text AS "achievementData",COALESCE(p.achievement_status,'not_started') AS "achievementStatus",p.achievement_submitted_at AS "achievementSubmittedAt" FROM organizations o LEFT JOIN annual_plans p ON p.organization_id=o.id AND p.year=${settings.year} WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY o.created_at DESC`
     : await sql`SELECT o.id,o.access_token AS "accessToken",o.name,o.contact_name AS "contactName",o.phone,o.email,o.participants,o.notes,o.updated_at AS "updatedAt",COALESCE(p.development_meetings,'[]'::jsonb)::text AS "developmentMeetings",COALESCE(p.trips,'[]'::jsonb)::text AS trips,COALESCE(p.workshops,'[]'::jsonb)::text AS workshops,CASE WHEN p.evaluation_followup IS NULL THEN NULL WHEN p.evaluation_followup THEN 1 ELSE 0 END AS "evaluationFollowup",COALESCE(p.status,'not_started') AS "planStatus",p.submitted_at AS "submittedAt",p.updated_at AS "planUpdatedAt",COALESCE(p.achievement_data,'[]'::jsonb)::text AS "achievementData",COALESCE(p.achievement_status,'not_started') AS "achievementStatus",p.achievement_submitted_at AS "achievementSubmittedAt" FROM organizations o LEFT JOIN annual_plans p ON p.organization_id=o.id AND p.year=${settings.year} WHERE o.archived=FALSE ORDER BY o.created_at DESC`;
+  const documents = token
+    ? await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE JOIN organizations o ON o.id=p.organization_id WHERE p.year=${settings.year} AND o.access_token=${token} AND o.archived=FALSE`
+    : await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE WHERE p.year=${settings.year}`;
   const attendanceRows = token
     ? []
     : await sql`SELECT organization_id AS "organizationId",meeting_number AS "meetingNumber",attendees,updated_at AS "updatedAt" FROM attendance`;
@@ -103,7 +108,11 @@ async function readAll(token?: string | null) {
     : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
   return {
     settings,
-    organizations,
+    organizations: organizations.map((org) => ({
+      ...org,
+      planDocument:
+        documents.find((doc) => doc.organizationId === org.id) || null,
+    })),
     attendance: attendanceRows,
     environments,
     assessmentResponses,
@@ -222,7 +231,24 @@ export async function POST(request: Request) {
         await sql`SELECT id FROM organizations WHERE access_token=${b.token} AND archived=FALSE`;
       if (!org[0])
         return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
-      await sql`UPDATE annual_plans SET development_meetings=${JSON.stringify(b.developmentMeetings || [])}::jsonb,trips=${JSON.stringify(b.trips || [])}::jsonb,workshops=${JSON.stringify(b.workshops || [])}::jsonb,evaluation_followup=${b.evaluationFollowup === null ? null : !!b.evaluationFollowup},status=${b.submit ? "submitted" : "draft"},submitted_at=${b.submit ? t : null},updated_at=${t} WHERE organization_id=${org[0].id as string} AND year=(SELECT year FROM project_settings WHERE id=1)`;
+      const plans =
+        await sql`SELECT document_id FROM annual_plans WHERE organization_id=${String(org[0].id)} AND year=(SELECT year FROM project_settings WHERE id=1)`;
+      const documentId = b.documentId ?? plans[0]?.document_id ?? null;
+      if (documentId) {
+        const docs =
+          await sql`SELECT id FROM plan_documents WHERE id=${documentId} AND organization_id=${String(org[0].id)} AND year=(SELECT year FROM project_settings WHERE id=1) AND complete=TRUE`;
+        if (!docs[0])
+          return Response.json(
+            { error: "مستند الخطة غير صالح. أعد رفع الملف." },
+            { status: 400 },
+          );
+      }
+      if (b.submit && !documentId)
+        return Response.json(
+          { error: "أرفق مستند الخطة بحجم أقل من ٥ ميجابايت قبل إرسالها" },
+          { status: 400 },
+        );
+      await sql`UPDATE annual_plans SET document_id=${documentId},development_meetings=${JSON.stringify(b.developmentMeetings || [])}::jsonb,trips=${JSON.stringify(b.trips || [])}::jsonb,workshops=${JSON.stringify(b.workshops || [])}::jsonb,evaluation_followup=${b.evaluationFollowup === null ? null : !!b.evaluationFollowup},status=${b.submit ? "submitted" : "draft"},submitted_at=${b.submit ? t : null},updated_at=${t} WHERE organization_id=${org[0].id as string} AND year=(SELECT year FROM project_settings WHERE id=1)`;
     }
     if (b.action === "saveAchievement") {
       const org =

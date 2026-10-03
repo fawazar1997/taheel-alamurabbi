@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
+  PLAN_DOCUMENT_CHUNK_BYTES,
+  validPlanDocumentSize,
+  type PlanDocument,
+} from "@/lib/plan-document";
+import {
   Building2,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -81,6 +86,7 @@ type Org = {
   workshops: string;
   evaluationFollowup: number | null;
   planStatus: string;
+  planDocument: PlanDocument | null;
   submittedAt: string | null;
   planUpdatedAt: string;
   achievementData: string;
@@ -1304,10 +1310,145 @@ function Summary({ org, data }: { org: Org; data: Data }) {
     </div>
   );
 }
+async function documentRequest(
+  url: string,
+  token: string,
+  options: RequestInit = {},
+) {
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...options.headers, "x-organization-token": token },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(body.error || "تعذر نقل مستند الخطة. أعد المحاولة.");
+  return body;
+}
+async function uploadPlanDocument(
+  file: File,
+  token: string,
+  progress: (value: number) => void,
+): Promise<PlanDocument> {
+  if (!validPlanDocumentSize(file.size))
+    throw new Error("يجب أن يكون الملف غير فارغ وبحجم أقل من ٥ ميجابايت");
+  const doc = await documentRequest("/api/plan-document?action=start", token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: file.name, size: file.size }),
+  });
+  for (
+    let offset = 0, index = 0;
+    offset < file.size;
+    offset += PLAN_DOCUMENT_CHUNK_BYTES, index++
+  ) {
+    await documentRequest(
+      `/api/plan-document?action=chunk&id=${encodeURIComponent(doc.id)}&index=${index}`,
+      token,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file.slice(offset, offset + PLAN_DOCUMENT_CHUNK_BYTES),
+      },
+    );
+    progress(
+      Math.round(
+        (Math.min(offset + PLAN_DOCUMENT_CHUNK_BYTES, file.size) / file.size) *
+          100,
+      ),
+    );
+  }
+  await documentRequest(
+    `/api/plan-document?action=finish&id=${encodeURIComponent(doc.id)}`,
+    token,
+    { method: "POST" },
+  );
+  return doc;
+}
+function PlanDocumentDownload({
+  document,
+  token,
+}: {
+  document: PlanDocument;
+  token: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const parts: ArrayBuffer[] = [];
+      for (
+        let i = 0;
+        i < Math.ceil(document.size / PLAN_DOCUMENT_CHUNK_BYTES);
+        i++
+      ) {
+        const result = await documentRequest(
+          `/api/plan-document?id=${encodeURIComponent(document.id)}&index=${i}`,
+          token,
+        );
+        const bytes = Uint8Array.from(atob(result.content), (c) =>
+          c.charCodeAt(0),
+        );
+        parts.push(bytes.buffer);
+      }
+      const blob = new Blob(parts, { type: "application/octet-stream" });
+      if (blob.size !== document.size)
+        throw new Error("التنزيل غير مكتمل. أعد المحاولة.");
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = document.name;
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "تعذر تنزيل المستند",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="break-all text-sm font-medium">{document.name}</p>
+        <p className="mt-1 text-sm text-slate-500">
+          {(document.size / 1024 / 1024).toFixed(2)} ميجابايت
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={busy}
+        onClick={download}
+      >
+        {busy ? "جارٍ التنزيل…" : "تنزيل مستند الخطة"}
+      </Button>
+    </div>
+  );
+}
 function PlanRead({ org, data }: { org: Org; data: Data }) {
   const c = calc(org, data.settings);
   return (
     <div className="grid gap-4 lg:grid-cols-3">
+      <Card className="lg:col-span-3">
+        <CardHeader>
+          <CardTitle className="text-lg">مستند الخطة</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {org.planDocument ? (
+            <PlanDocumentDownload
+              document={org.planDocument}
+              token={org.accessToken}
+            />
+          ) : (
+            <p className="text-sm text-slate-500">
+              لم ترفق الجهة مستند الخطة بعد.
+            </p>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -2060,6 +2201,12 @@ function PlanForm({
   reload: () => void;
 }) {
   const initial = calc(org, settings);
+  const [file, setFile] = useState<File | null>(null);
+  const [document, setDocument] = useState<PlanDocument | null>(
+    org.planDocument,
+  );
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [fileError, setFileError] = useState("");
   const [d, setD] = useState(initial.d),
     [trips, setTrips] = useState(initial.t),
     [w, setW] = useState(initial.w),
@@ -2080,11 +2227,26 @@ function PlanForm({
   const save = async (submit: boolean) => {
     if (submit && !c.valid)
       return toast.error("لا يمكن اعتماد الخطة حاليًا. راجع البنود الناقصة.");
+    if (fileError) return toast.error(fileError);
+    if (submit && !file && !document)
+      return toast.error("أرفق مستند الخطة قبل إرسالها");
     setBusy(true);
     try {
+      let savedDocument = document;
+      if (file) {
+        setUploadProgress(0);
+        savedDocument = await uploadPlanDocument(
+          file,
+          token,
+          setUploadProgress,
+        );
+        setDocument(savedDocument);
+        setFile(null);
+      }
       await post({
         action: "savePlan",
         token,
+        documentId: savedDocument?.id,
         developmentMeetings: d,
         trips,
         workshops: w,
@@ -2099,6 +2261,7 @@ function PlanForm({
       toast.error(e.message);
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   };
   return (
@@ -2161,6 +2324,80 @@ function PlanForm({
         set={setW}
         axes={settings.workshopAxes}
       />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">مستند الخطة</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p id="plan-file-help" className="text-sm leading-7 text-slate-600">
+            أرفق مستند الخطة المعتمد لدى جهتكم. اضغط الملف قبل رفعه ليكون حجمه
+            أقل من ٥ ميجابايت. المستند مطلوب عند اعتماد وإرسال الخطة.
+          </p>
+          {document && (
+            <PlanDocumentDownload document={document} token={token} />
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="plan-document">
+              {document ? "استبدال مستند الخطة" : "اختيار مستند الخطة"}
+            </Label>
+            <Input
+              id="plan-document"
+              type="file"
+              disabled={busy}
+              aria-describedby="plan-file-help plan-file-error"
+              aria-invalid={!!fileError}
+              onChange={(event) => {
+                const selected = event.target.files?.[0];
+                if (!selected) {
+                  setFile(null);
+                  setFileError("");
+                  return;
+                }
+                if (!validPlanDocumentSize(selected.size)) {
+                  const message =
+                    selected.size === 0
+                      ? "الملف فارغ. اختر مستندًا صالحًا."
+                      : "حجم الملف يجب أن يكون أقل من ٥ ميجابايت. اضغط الملف ثم أعد اختياره.";
+                  setFile(null);
+                  setFileError(message);
+                  event.target.value = "";
+                  toast.error(message);
+                  return;
+                }
+                setFile(selected);
+                setFileError("");
+              }}
+            />
+            <p
+              id="plan-file-error"
+              role="alert"
+              className="text-sm text-rose-700"
+            >
+              {fileError}
+            </p>
+            {file && (
+              <p className="break-all text-sm text-slate-600">
+                الملف المحدد: {file.name} —{" "}
+                {(file.size / 1024 / 1024).toFixed(2)} ميجابايت. سيُرفع عند حفظ
+                الخطة.
+              </p>
+            )}
+            {fileError && (
+              <Button variant="outline" onClick={() => setFileError("")}>
+                إلغاء اختيار الملف
+              </Button>
+            )}
+          </div>
+          {uploadProgress !== null && (
+            <div role="status" aria-live="polite">
+              <p className="mb-2 text-sm">
+                جارٍ رفع المستند: {uploadProgress}٪
+              </p>
+              <Progress value={uploadProgress} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
       {c.missing.length > 0 && (
         <Card className="border-rose-200 bg-rose-50/50">
           <CardHeader>
@@ -2182,7 +2419,10 @@ function PlanForm({
         <Button variant="outline" disabled={busy} onClick={() => save(false)}>
           <Save /> حفظ كمسودة
         </Button>
-        <Button disabled={busy || !c.valid} onClick={() => save(true)}>
+        <Button
+          disabled={busy || !c.valid || !!fileError || (!file && !document)}
+          onClick={() => save(true)}
+        >
           <Send /> اعتماد وإرسال الخطة
         </Button>
       </div>
