@@ -1,4 +1,5 @@
 "use client";
+import { attendanceTotals } from "@/lib/meeting-attendance";
 import { SiteLogo } from "@/components/site-logo";
 import {
   ASSESSMENT_AXES,
@@ -105,6 +106,7 @@ type Org = {
 type Attend = {
   organizationId: string;
   meetingNumber: number;
+  participants: number;
   attendees: number;
   updatedAt: string;
 };
@@ -469,15 +471,15 @@ function Dashboard({
         )
       : 0,
     att = data.attendance.reduce((a, x) => a + x.attendees, 0),
-    possible = orgs.reduce(
-      (a, o) => a + o.participants * s.educatorMeetings,
+    possible = data.attendance.reduce(
+      (sum, record) => sum + record.participants,
       0,
     ),
     avgAtt = possible ? Math.round((att / possible) * 100) : 0,
     missing = orgs.filter((o) => calc(o, s).missing.length).length;
   const kpis = [
     ["إجمالي الجهات", orgs.length, "جهة", Building2, () => go("organizations")],
-    ["إجمالي المشاركين", totalP, "مشارك", Users, () => go("organizations")],
+    ["المشاركات في اللقاءات", totalP, "مشاركة", Users, () => go("attendance")],
     [
       "الخطط المكتملة",
       completed,
@@ -564,7 +566,7 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
           <TableHead>اسم الجهة</TableHead>
           <TableHead>حالة الخطة</TableHead>
           <TableHead>الاكتمال</TableHead>
-          <TableHead>المشاركون</TableHead>
+          <TableHead>إجمالي المشاركات في اللقاءات</TableHead>
           {Array.from({ length: data.settings.educatorMeetings }, (_, i) => (
             <TableHead key={i}>حضور لقاء تأهيل المربي {i + 1}</TableHead>
           ))}
@@ -577,13 +579,7 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
         {data.organizations.map((o) => {
           const c = calc(o, data.settings),
             ats = data.attendance.filter((a) => a.organizationId === o.id),
-            rate = o.participants
-              ? Math.round(
-                  (ats.reduce((x, a) => x + a.attendees, 0) /
-                    (o.participants * data.settings.educatorMeetings)) *
-                    100,
-                )
-              : 0;
+            rate = attendanceTotals(ats).rate;
           return (
             <TableRow
               key={o.id}
@@ -708,7 +704,7 @@ function Organizations({
                 </div>
                 <div className="flex items-center justify-between border-t pt-4">
                   <span className="text-sm text-brand-muted">
-                    {o.participants} مشاركًا
+                    {o.participants} مشاركة في اللقاءات
                   </span>
                   <div className="flex gap-1">
                     <Button
@@ -779,7 +775,6 @@ function OrgDialog({
         contactName: "",
         phone: "",
         email: "",
-        participants: 0,
         notes: "",
       },
     ),
@@ -830,16 +825,6 @@ function OrgDialog({
             />
           </div>
         ))}
-        <div>
-          <Label>عدد المشاركين</Label>
-          <Input
-            className="mt-2"
-            type="number"
-            min={0}
-            value={f.participants}
-            onChange={(e) => setF({ ...f, participants: +e.target.value })}
-          />
-        </div>
         <div className="sm:col-span-2">
           <Label>ملاحظات</Label>
           <Textarea
@@ -875,7 +860,7 @@ function Attendance({ data }: { data: Data }) {
           <TableHeader>
             <TableRow>
               <TableHead>الجهة</TableHead>
-              <TableHead>المشاركون</TableHead>
+              <TableHead>إجمالي المشاركات في اللقاءات</TableHead>
               {Array.from(
                 { length: data.settings.educatorMeetings },
                 (_, i) => (
@@ -893,8 +878,7 @@ function Attendance({ data }: { data: Data }) {
                   a.organizationId === org.id &&
                   a.meetingNumber <= data.settings.educatorMeetings,
               );
-              const denominator =
-                org.participants * data.settings.educatorMeetings;
+              const denominator = attendanceTotals(records).participants;
               const average = denominator
                 ? Math.round(
                     (records.reduce((sum, a) => sum + a.attendees, 0) /
@@ -920,10 +904,10 @@ function Attendance({ data }: { data: Data }) {
                             <div>
                               <b>{record.attendees}</b>
                               <span className="ms-2 text-sm text-brand-muted">
-                                (
-                                {org.participants
+                                ( من {record.participants} مشاركًا ·{" "}
+                                {record.participants
                                   ? Math.round(
-                                      (record.attendees / org.participants) *
+                                      (record.attendees / record.participants) *
                                         100,
                                     )
                                   : 0}
@@ -994,8 +978,9 @@ function EntityAttendance({
       <div>
         <h2 className="text-xl font-bold">حضور لقاءات تأهيل المربي</h2>
         <p className="mt-2 text-sm leading-7 text-brand-muted">
-          أدخل عدد الحاضرين من جهتكم لكل لقاء، ثم احفظ حضور ذلك اللقاء بصورة
-          مستقلة. عدد المشاركين المسجل للجهة: {org.participants}.
+          أدخل عدد المشاركين وعدد الحاضرين من جهتكم لكل لقاء، ثم احفظ بيانات ذلك
+          اللقاء بصورة مستقلة. تُحسب النسبة من عدد الحاضرين إلى عدد المشاركين في
+          اللقاء نفسه.
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
@@ -1016,7 +1001,6 @@ function EntityAttendance({
   );
 }
 function EntityMeetingAttendance({
-  org,
   meeting,
   record,
   token,
@@ -1028,32 +1012,43 @@ function EntityMeetingAttendance({
   token: string;
   reload: () => void;
 }) {
+  const [participantsValue, setParticipantsValue] = useState(
+    record ? String(record.participants) : "",
+  );
   const [value, setValue] = useState(record ? String(record.attendees) : "");
   const [busy, setBusy] = useState(false);
-  const n = Number(value);
+  const participants = Number(participantsValue),
+    n = Number(value);
   const valid =
+    participantsValue.trim() !== "" &&
     value.trim() !== "" &&
+    Number.isInteger(participants) &&
+    participants >= 0 &&
+    participants <= 2147483647 &&
     Number.isInteger(n) &&
     n >= 0 &&
-    n <= org.participants;
+    n <= participants;
   const save = async () => {
     if (!valid)
-      return toast.error("أدخل عددًا صحيحًا للحضور لا يتجاوز عدد المشاركين");
+      return toast.error(
+        "أدخل عدد المشاركين وعدد الحاضرين كأعداد صحيحة، بحيث لا يتجاوز الحضور عدد المشاركين في اللقاء",
+      );
     setBusy(true);
     try {
       await post({
         action: "saveAttendance",
         token,
         meetingNumber: meeting,
+        participants,
         attendees: n,
       });
-      toast.success(`تم حفظ حضور لقاء تأهيل المربي ${meeting}`);
+      toast.success(`تم حفظ بيانات لقاء تأهيل المربي ${meeting}`);
       reload();
     } catch (error) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "تعذر حفظ الحضور. أعد المحاولة.",
+          : "تعذر حفظ البيانات. أعد المحاولة.",
       );
     } finally {
       setBusy(false);
@@ -1064,49 +1059,65 @@ function EntityMeetingAttendance({
       <CardHeader>
         <CardTitle className="text-lg">لقاء تأهيل المربي {meeting}</CardTitle>
         <Badge variant="outline" className="w-fit">
-          {record ? "تم تسجيل الحضور" : "لم يُسجل الحضور بعد"}
+          {record ? "تم تسجيل البيانات" : "لم تُسجل البيانات بعد"}
         </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor={`meeting-attendance-${meeting}`}>عدد الحاضرين</Label>
+          <Label htmlFor={`meeting-participants-${meeting}`}>
+            عدد المشاركين في اللقاء
+          </Label>
+          <Input
+            id={`meeting-participants-${meeting}`}
+            type="number"
+            min={0}
+            max={2147483647}
+            step={1}
+            inputMode="numeric"
+            value={participantsValue}
+            disabled={busy}
+            onChange={(e) => setParticipantsValue(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`meeting-attendance-${meeting}`}>
+            عدد الحاضرين في اللقاء
+          </Label>
           <Input
             id={`meeting-attendance-${meeting}`}
             type="number"
             min={0}
-            max={org.participants}
+            max={participantsValue.trim() !== "" ? participants : undefined}
             step={1}
             inputMode="numeric"
             value={value}
             disabled={busy}
-            aria-describedby={`meeting-attendance-help-${meeting}`}
+            aria-describedby={`meeting-help-${meeting}`}
             onChange={(e) => setValue(e.target.value)}
           />
           <p
-            id={`meeting-attendance-help-${meeting}`}
+            id={`meeting-help-${meeting}`}
             className="text-sm text-brand-muted"
           >
-            من صفر إلى {org.participants} مشاركًا. أدخل صفرًا عند عدم وجود حضور.
+            لا يتجاوز عدد الحاضرين عدد المشاركين في هذا اللقاء. أدخل صفرًا عند
+            عدم وجود حضور.
           </p>
         </div>
         <p className="text-sm">
           نسبة الحضور:{" "}
           <b>
-            {valid && org.participants
-              ? Math.round((n / org.participants) * 100)
-              : 0}
-            ٪
+            {valid && participants ? Math.round((n / participants) * 100) : 0}٪
           </b>
         </p>
         {record && (
           <p className="text-sm text-brand-muted">
-            آخر حفظ: {date(record.updatedAt)} · العدد المحفوظ:{" "}
-            {record.attendees}
+            آخر حفظ: {date(record.updatedAt)} · المحفوظ: {record.attendees} حاضر
+            من {record.participants} مشاركًا
           </p>
         )}
         <Button disabled={busy || !valid} onClick={save}>
           <Save />
-          {busy ? "جارٍ الحفظ…" : `حفظ حضور اللقاء ${meeting}`}
+          {busy ? "جارٍ الحفظ…" : `حفظ بيانات اللقاء ${meeting}`}
         </Button>
       </CardContent>
     </Card>
@@ -1125,13 +1136,7 @@ function OrgFile({
 }) {
   const c = calc(org, data.settings),
     ats = data.attendance.filter((a) => a.organizationId === org.id),
-    avg = org.participants
-      ? Math.round(
-          (ats.reduce((x, a) => x + a.attendees, 0) /
-            (org.participants * data.settings.educatorMeetings)) *
-            100,
-        )
-      : 0;
+    avg = attendanceTotals(ats).rate;
   const [edit, setEdit] = useState(false);
   const achievementLabel =
     org.achievementStatus === "submitted"
@@ -1158,7 +1163,7 @@ function OrgFile({
               <h1 className="mt-1 text-2xl font-bold">{org.name}</h1>
               <p className="mt-2 text-sm text-white/65">
                 مسؤول التواصل: {org.contactName || "—"} · {org.participants}{" "}
-                مشاركًا
+                مشاركة في اللقاءات
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1273,8 +1278,9 @@ function OrgFile({
               {Array.from(
                 { length: data.settings.educatorMeetings },
                 (_, i) => {
-                  const a =
-                    ats.find((x) => x.meetingNumber === i + 1)?.attendees ?? 0;
+                  const record = ats.find((x) => x.meetingNumber === i + 1);
+                  const a = record?.attendees ?? 0;
+                  const participants = record?.participants ?? 0;
                   return (
                     <Card key={i}>
                       <CardContent className="p-5">
@@ -1284,14 +1290,12 @@ function OrgFile({
                         <b className="mt-2 block text-3xl">
                           {a}{" "}
                           <small className="text-sm font-normal text-brand-muted">
-                            من {org.participants}
+                            من {participants}
                           </small>
                         </b>
                         <Progress
                           className="mt-4"
-                          value={
-                            org.participants ? (a / org.participants) * 100 : 0
-                          }
+                          value={participants ? (a / participants) * 100 : 0}
                         />
                       </CardContent>
                     </Card>
@@ -1325,13 +1329,7 @@ function Info({ label, value }: { label: string; value: string }) {
 function Summary({ org, data }: { org: Org; data: Data }) {
   const c = calc(org, data.settings),
     ats = data.attendance.filter((a) => a.organizationId === org.id),
-    avg = org.participants
-      ? Math.round(
-          (ats.reduce((x, a) => x + a.attendees, 0) /
-            (org.participants * data.settings.educatorMeetings)) *
-            100,
-        )
-      : 0;
+    avg = attendanceTotals(ats).rate;
   return (
     <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
       <Card>
@@ -1343,7 +1341,7 @@ function Summary({ org, data }: { org: Org; data: Data }) {
             ["حالة الخطة", planLabel(org, c.progress)],
             ["اكتمال الخطة", `${c.progress}%`],
             ["الأنشطة المخططة", c.total],
-            ["عدد المشاركين", org.participants],
+            ["إجمالي المشاركات في اللقاءات", org.participants],
             ["متوسط الحضور", `${avg}%`],
             ["معدل الإنجاز", `${achievementRate(org)}%`],
           ].map(([a, b]) => (

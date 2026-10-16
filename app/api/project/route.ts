@@ -1,4 +1,5 @@
 import { getSql } from "@/db";
+import { attendanceTotals } from "@/lib/meeting-attendance";
 import {
   phaseStats,
   evaluatorRoleCounts,
@@ -62,6 +63,7 @@ async function ensureSchema() {
     meeting_number INTEGER NOT NULL, attendees INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL, UNIQUE(organization_id, meeting_number)
   )`;
+  await sql`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS participants INTEGER CHECK (participants >= 0)`;
   await sql`CREATE TABLE IF NOT EXISTS learning_environments (
     id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name TEXT NOT NULL, pre_score NUMERIC, post_score NUMERIC,
@@ -110,8 +112,8 @@ async function readAll(token?: string | null) {
     ? await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE JOIN organizations o ON o.id=p.organization_id WHERE p.year=${settings.year} AND o.access_token=${token} AND o.archived=FALSE`
     : await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE WHERE p.year=${settings.year}`;
   const attendanceRows = token
-    ? await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
-    : await sql`SELECT organization_id AS "organizationId",meeting_number AS "meetingNumber",attendees,updated_at AS "updatedAt" FROM attendance`;
+    ? await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",COALESCE(a.participants,o.participants) AS participants,a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.access_token=${token} AND o.archived=FALSE AND a.meeting_number BETWEEN 1 AND ${settings.educatorMeetings}`
+    : await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",COALESCE(a.participants,o.participants) AS participants,a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.archived=FALSE AND a.meeting_number BETWEEN 1 AND ${settings.educatorMeetings}`;
   const environmentRows = token
     ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
     : await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.archived=FALSE ORDER BY e.created_at`;
@@ -143,6 +145,12 @@ async function readAll(token?: string | null) {
     settings,
     organizations: organizations.map((org) => ({
       ...org,
+      participants: attendanceTotals(
+        attendanceRows.filter((a) => a.organizationId === org.id) as {
+          participants: number;
+          attendees: number;
+        }[],
+      ).participants,
       planDocument:
         documents.find((doc) => doc.organizationId === org.id) || null,
     })),
@@ -182,12 +190,12 @@ export async function POST(request: Request) {
         token = `${b.name?.replace(/[^\u0600-\u06FFa-z0-9]/gi, "").slice(0, 8) || "org"}-${crypto.randomUUID().slice(0, 8)}`;
       const s = await sql`SELECT year FROM project_settings WHERE id=1`;
       const year = Number(s[0]?.year || new Date().getFullYear());
-      await sql`INSERT INTO organizations (id,access_token,name,contact_name,phone,email,participants,notes,archived,created_at,updated_at) VALUES (${id},${token},${b.name},${b.contactName || ""},${b.phone || ""},${b.email || ""},${Number(b.participants) || 0},${b.notes || ""},FALSE,${t},${t})`;
+      await sql`INSERT INTO organizations (id,access_token,name,contact_name,phone,email,participants,notes,archived,created_at,updated_at) VALUES (${id},${token},${b.name},${b.contactName || ""},${b.phone || ""},${b.email || ""},${0},${b.notes || ""},FALSE,${t},${t})`;
       await sql`INSERT INTO annual_plans (id,organization_id,year,development_meetings,trips,workshops,status,updated_at) VALUES (${uid("plan")},${id},${year},'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'not_started',${t})`;
       return Response.json({ ok: true, id, token });
     }
     if (b.action === "updateOrg")
-      await sql`UPDATE organizations SET name=${b.name},contact_name=${b.contactName || ""},phone=${b.phone || ""},email=${b.email || ""},participants=${Number(b.participants) || 0},notes=${b.notes || ""},updated_at=${t} WHERE id=${b.id}`;
+      await sql`UPDATE organizations SET name=${b.name},contact_name=${b.contactName || ""},phone=${b.phone || ""},email=${b.email || ""},notes=${b.notes || ""},updated_at=${t} WHERE id=${b.id}`;
     if (b.action === "archiveOrg")
       await sql`UPDATE organizations SET archived=TRUE,updated_at=${t} WHERE id=${b.id}`;
     if (b.action === "deleteOrg")
@@ -367,7 +375,7 @@ export async function POST(request: Request) {
           { status: 403 },
         );
       const org =
-        await sql`SELECT o.id,o.participants,s.educator_meetings FROM organizations o CROSS JOIN project_settings s WHERE o.access_token=${b.token} AND o.archived=FALSE AND s.id=1`;
+        await sql`SELECT o.id,s.educator_meetings FROM organizations o CROSS JOIN project_settings s WHERE o.access_token=${b.token} AND o.archived=FALSE AND s.id=1`;
       if (!org[0])
         return Response.json({ error: "رابط الجهة غير صالح" }, { status: 404 });
       if (b.organizationId && b.organizationId !== org[0].id)
@@ -376,6 +384,7 @@ export async function POST(request: Request) {
           { status: 403 },
         );
       const n = b.attendees,
+        participants = b.participants,
         meeting = b.meetingNumber;
       if (
         !Number.isInteger(meeting) ||
@@ -383,16 +392,25 @@ export async function POST(request: Request) {
         meeting > Number(org[0].educator_meetings)
       )
         return Response.json({ error: "رقم اللقاء غير صالح" }, { status: 400 });
-      if (!Number.isInteger(n) || n < 0 || n > Number(org[0].participants))
+      if (
+        !Number.isInteger(participants) ||
+        participants < 0 ||
+        participants > 2147483647
+      )
+        return Response.json(
+          { error: "أدخل عددًا صحيحًا غير سالب للمشاركين في هذا اللقاء" },
+          { status: 400 },
+        );
+      if (!Number.isInteger(n) || n < 0 || n > participants)
         return Response.json(
           {
             error:
-              "أدخل عددًا صحيحًا للحضور بين صفر وعدد المشاركين المسجل للجهة",
+              "عدد الحاضرين يجب أن يكون عددًا صحيحًا بين صفر وعدد المشاركين في هذا اللقاء",
           },
           { status: 400 },
         );
       const rows =
-        await sql`INSERT INTO attendance (id,organization_id,meeting_number,attendees,updated_at) SELECT ${uid("att")},o.id,${meeting},${n},${t} FROM organizations o WHERE o.id=${String(org[0].id)} AND o.archived=FALSE AND o.participants>=${n} AND EXISTS (SELECT 1 FROM project_settings WHERE id=1 AND educator_meetings>=${meeting}) ON CONFLICT (organization_id,meeting_number) DO UPDATE SET attendees=EXCLUDED.attendees,updated_at=EXCLUDED.updated_at RETURNING organization_id`;
+        await sql`INSERT INTO attendance (id,organization_id,meeting_number,participants,attendees,updated_at) SELECT ${uid("att")},o.id,${meeting},${participants},${n},${t} FROM organizations o WHERE o.id=${String(org[0].id)} AND o.archived=FALSE AND EXISTS (SELECT 1 FROM project_settings WHERE id=1 AND educator_meetings>=${meeting}) ON CONFLICT (organization_id,meeting_number) DO UPDATE SET participants=EXCLUDED.participants,attendees=EXCLUDED.attendees,updated_at=EXCLUDED.updated_at RETURNING organization_id`;
       if (!rows[0])
         return Response.json(
           {
