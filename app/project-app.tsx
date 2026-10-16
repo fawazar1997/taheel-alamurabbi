@@ -1,4 +1,5 @@
 "use client";
+import { SiteLogo } from "@/components/site-logo";
 import {
   ASSESSMENT_AXES,
   COMMUNITY_AXES,
@@ -269,12 +270,12 @@ const planLabel = (o: Org, p: number) =>
 function Status({ label }: { label: string }) {
   const c =
     label === "مكتمل"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      ? "bg-brand-soft text-primary border-brand-stroke"
       : label === "قيد الاستكمال"
-        ? "bg-amber-50 text-amber-700 border-amber-200"
+        ? "bg-brand-soft text-primary border-brand-stroke"
         : label === "يحتاج متابعة"
-          ? "bg-rose-50 text-rose-700 border-rose-200"
-          : "bg-slate-100 text-slate-600 border-slate-200";
+          ? "bg-brand-soft text-primary border-brand-stroke"
+          : "bg-brand-surface text-brand-muted border-brand-stroke";
   return (
     <Badge variant="outline" className={c}>
       {label}
@@ -322,10 +323,10 @@ export default function ProjectApp() {
   }, []);
   if (!data)
     return (
-      <div className="grid min-h-screen place-items-center bg-[#f5f7f6]">
+      <div className="grid min-h-screen place-items-center bg-[var(--background)]">
         <div className="text-center">
-          <RotateCcw className="mx-auto mb-3 size-7 animate-spin text-[#0b5b46]" />
-          <p className="text-sm text-slate-500">جاري تحميل النظام...</p>
+          <RotateCcw className="mx-auto mb-3 size-7 animate-spin text-[var(--primary)]" />
+          <p className="text-sm text-brand-muted">جاري تحميل النظام...</p>
         </div>
       </div>
     );
@@ -353,21 +354,20 @@ export default function ProjectApp() {
     settings: "إعدادات المشروع",
   };
   return (
-    <div className="min-h-screen bg-[#f5f7f6] text-[#17211d]">
-      <Toaster position="top-center" richColors />
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <Toaster position="top-center" />
       <aside
-        className={`fixed inset-y-0 right-0 z-40 w-64 border-l border-[#dfe7e3] bg-[#073f32] p-5 text-white transition-transform lg:translate-x-0 ${mobile ? "translate-x-0" : "translate-x-full"}`}
+        className={`fixed inset-y-0 right-0 z-40 w-64 border-l border-[var(--border)] bg-[var(--brand-ink)] p-5 text-white transition-transform lg:translate-x-0 ${mobile ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="mb-9 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-2xl bg-white/12 text-lg font-bold">
-              ت
-            </div>
             <div>
-              <b className="block">تأهيل المربي</b>
-              <span className="text-xs text-white/55">
+              <div className="rounded-xl bg-white p-3">
+                <SiteLogo className="w-36" />
+              </div>
+              <p className="mt-2 text-sm text-white/90">
                 إدارة المشروع · {data.settings.year}
-              </span>
+              </p>
             </div>
           </div>
           <button className="lg:hidden" onClick={() => setMobile(false)}>
@@ -389,7 +389,7 @@ export default function ProjectApp() {
                 setView(id);
                 setMobile(false);
               }}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-right text-sm transition ${view === id ? "bg-white text-[#073f32] shadow" : "text-white/72 hover:bg-white/10 hover:text-white"}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-right text-sm transition ${view === id ? "bg-white text-[var(--brand-ink)] shadow" : "text-white/90 hover:bg-white/10 hover:text-white"}`}
             >
               <I className="size-5" />
               {l}
@@ -397,9 +397,9 @@ export default function ProjectApp() {
           ))}
         </nav>
         <div className="absolute bottom-6 inset-x-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs text-white/55">السنة الحالية</p>
+          <p className="text-xs text-white/85">السنة الحالية</p>
           <p className="mt-1 font-bold">{data.settings.year}</p>
-          <p className="mt-2 text-xs text-white/45">آخر مزامنة: الآن</p>
+          <p className="mt-2 text-xs text-white/85">آخر مزامنة: الآن</p>
         </div>
       </aside>
       <main className="lg:pr-64">
@@ -410,16 +410,16 @@ export default function ProjectApp() {
             </button>
             <div>
               <h1 className="font-bold">{titles[view]}</h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-brand-muted">
                 مشروع {data.settings.projectName}
               </p>
             </div>
           </div>
           <div className="hidden items-center gap-3 sm:flex">
-            <span className="rounded-full bg-[#edf5f2] px-3 py-1.5 text-xs text-[#0b5b46]">
+            <span className="rounded-full bg-[var(--brand-soft)] px-3 py-1.5 text-xs text-[var(--primary)]">
               نسخة تشغيلية
             </span>
-            <div className="grid size-9 place-items-center rounded-full bg-[#d8ae59] font-bold text-white">
+            <div className="grid size-9 place-items-center rounded-full bg-[var(--brand-light)] font-bold text-white">
               م
             </div>
           </div>
@@ -511,7 +511,7 @@ function Dashboard({
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h2 className="text-2xl font-bold">نظرة عامة</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-brand-muted">
             حالة تنفيذ المشروع لدى الجهات المشاركة
           </p>
         </div>
@@ -521,16 +521,16 @@ function Dashboard({
           <button
             key={l}
             onClick={click}
-            className="rounded-2xl border bg-white p-5 text-right shadow-[0_3px_15px_rgb(15_60_47/4%)] transition hover:-translate-y-0.5 hover:border-[#84b7a8]"
+            className="rounded-2xl border bg-white p-5 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--brand-light)]"
           >
             <div className="mb-5 flex items-center justify-between">
-              <span className="text-sm text-slate-500">{l}</span>
-              <span className="grid size-9 place-items-center rounded-xl bg-[#e9f2ee] text-[#0b5b46]">
+              <span className="text-sm text-brand-muted">{l}</span>
+              <span className="grid size-9 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--primary)]">
                 <I className="size-5" />
               </span>
             </div>
             <b className="text-3xl">{v}</b>
-            <span className="mr-2 text-xs text-slate-400">{x}</span>
+            <span className="mr-2 text-xs text-brand-muted">{x}</span>
           </button>
         ))}
       </div>
@@ -538,7 +538,7 @@ function Dashboard({
         <CardHeader className="flex-row items-center justify-between">
           <div>
             <CardTitle>حالة الجهات</CardTitle>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-brand-muted">
               آخر حالة مسجلة لكل جهة
             </p>
           </div>
@@ -613,7 +613,7 @@ function OrgTable({ data, open }: { data: Data; open: (s: string) => void }) {
                   <span className="text-xs">{achievementRate(o)}%</span>
                 </div>
               </TableCell>
-              <TableCell className="min-w-36 text-xs text-slate-500">
+              <TableCell className="min-w-36 text-xs text-brand-muted">
                 {date(o.planUpdatedAt || o.updatedAt)}
               </TableCell>
             </TableRow>
@@ -646,7 +646,7 @@ function Organizations({
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-1 gap-3">
           <div className="relative min-w-56 max-w-sm flex-1">
-            <Search className="absolute right-3 top-3 size-4 text-slate-400" />
+            <Search className="absolute right-3 top-3 size-4 text-brand-muted" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -682,13 +682,13 @@ function Organizations({
             <Card key={o.id} className="border-0 shadow-sm">
               <CardContent className="p-5">
                 <div className="mb-5 flex items-start justify-between">
-                  <div className="grid size-11 place-items-center rounded-xl bg-[#e9f2ee] text-[#0b5b46]">
+                  <div className="grid size-11 place-items-center rounded-xl bg-[var(--brand-soft)] text-[var(--primary)]">
                     <Building2 />
                   </div>
                   <Status label={planLabel(o, c.progress)} />
                 </div>
                 <h3 className="font-bold">{o.name}</h3>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-brand-muted">
                   {o.contactName || "لم يحدد مسؤول التواصل"}
                 </p>
                 <div className="my-5">
@@ -704,14 +704,14 @@ function Organizations({
                   <Progress value={achievementRate(o)} />
                 </div>
                 <div className="flex items-center justify-between border-t pt-4">
-                  <span className="text-sm text-slate-500">
+                  <span className="text-sm text-brand-muted">
                     {o.participants} مشاركًا
                   </span>
                   <div className="flex gap-1">
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      className="text-primary hover:bg-brand-soft hover:text-primary"
                       onClick={async () => {
                         if (
                           !window.confirm(
@@ -887,7 +887,7 @@ function Attendance({ data, reload }: { data: Data; reload: () => void }) {
     <Card className="border-0 shadow-sm">
       <CardHeader>
         <CardTitle>سجل حضور الجهات</CardTitle>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-brand-muted">
           أدخل عدد الحاضرين، وستحسب النسبة تلقائيًا.
         </p>
       </CardHeader>
@@ -934,7 +934,7 @@ function Attendance({ data, reload }: { data: Data; reload: () => void }) {
                                 setVals({ ...vals, [k]: +e.target.value })
                               }
                             />
-                            <span className="w-10 text-xs text-slate-500">
+                            <span className="w-10 text-xs text-brand-muted">
                               {o.participants
                                 ? Math.round((v / o.participants) * 100)
                                 : 0}
@@ -1002,18 +1002,18 @@ function OrgFile({
         ? "مسودة"
         : "لم يبدأ";
   return (
-    <div className="min-h-screen bg-[#f5f7f6]">
-      <Toaster position="top-center" richColors />
+    <div className="min-h-screen bg-[var(--background)]">
+      <Toaster position="top-center" />
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <Button variant="ghost" onClick={back}>
             العودة للجهات <ChevronLeft />
           </Button>
-          <b className="text-[#0b5b46]">تأهيل المربي</b>
+          <SiteLogo className="w-28" />
         </div>
       </header>
       <main className="mx-auto max-w-7xl p-4 lg:p-8">
-        <div className="mb-6 rounded-3xl bg-[#073f32] p-6 text-white">
+        <div className="mb-6 rounded-3xl bg-[var(--brand-ink)] p-6 text-white">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm text-white/60">ملف الجهة</p>
@@ -1071,7 +1071,7 @@ function OrgFile({
                 />
               </Dialog>
               <Button
-                className="bg-rose-500/20 text-white hover:bg-rose-500/35"
+                className="bg-brand-soft/20 text-white hover:bg-brand-soft/35"
                 onClick={async () => {
                   if (
                     !window.confirm(
@@ -1140,12 +1140,12 @@ function OrgFile({
                   return (
                     <Card key={i}>
                       <CardContent className="p-5">
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-brand-muted">
                           حضور لقاء تأهيل المربي {i + 1}
                         </p>
                         <b className="mt-2 block text-3xl">
                           {a}{" "}
-                          <small className="text-sm font-normal text-slate-400">
+                          <small className="text-sm font-normal text-brand-muted">
                             من {org.participants}
                           </small>
                         </b>
@@ -1162,8 +1162,10 @@ function OrgFile({
               )}
               <Card>
                 <CardContent className="p-5">
-                  <p className="text-sm text-slate-500">متوسط الحضور</p>
-                  <b className="mt-2 block text-3xl text-[#0b5b46]">{avg}%</b>
+                  <p className="text-sm text-brand-muted">متوسط الحضور</p>
+                  <b className="mt-2 block text-3xl text-[var(--primary)]">
+                    {avg}%
+                  </b>
                   <Progress className="mt-4" value={avg} />
                 </CardContent>
               </Card>
@@ -1177,7 +1179,7 @@ function OrgFile({
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-white/8 p-4">
-      <p className="text-xs text-white/55">{label}</p>
+      <p className="text-xs text-white/85">{label}</p>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
@@ -1207,8 +1209,8 @@ function Summary({ org, data }: { org: Org; data: Data }) {
             ["متوسط الحضور", `${avg}%`],
             ["معدل الإنجاز", `${achievementRate(org)}%`],
           ].map(([a, b]) => (
-            <div key={a} className="rounded-2xl border bg-slate-50/60 p-4">
-              <span className="text-sm text-slate-500">{a}</span>
+            <div key={a} className="rounded-2xl border bg-brand-surface/60 p-4">
+              <span className="text-sm text-brand-muted">{a}</span>
               <b className="mt-1 block text-xl">{b}</b>
             </div>
           ))}
@@ -1222,14 +1224,14 @@ function Summary({ org, data }: { org: Org; data: Data }) {
           {c.missing.length ? (
             <ul className="space-y-3">
               {c.missing.map((x) => (
-                <li className="flex gap-2 text-sm text-rose-700" key={x}>
+                <li className="flex gap-2 text-sm text-primary" key={x}>
                   <span>•</span>
                   {x}
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="rounded-2xl bg-emerald-50 p-5 text-sm text-emerald-700">
+            <div className="rounded-2xl bg-brand-soft p-5 text-sm text-primary">
               لا توجد بنود ناقصة. الخطة مستوفية للمتطلبات.
             </div>
           )}
@@ -1341,7 +1343,7 @@ function PlanDocumentDownload({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="break-all text-sm font-medium">{document.name}</p>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-brand-muted">
           {(document.size / 1024 / 1024).toFixed(2)} ميجابايت
         </p>
       </div>
@@ -1371,7 +1373,7 @@ function PlanRead({ org, data }: { org: Org; data: Data }) {
               token={org.accessToken}
             />
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-brand-muted">
               لم ترفق الجهة مستند الخطة بعد.
             </p>
           )}
@@ -1380,19 +1382,19 @@ function PlanRead({ org, data }: { org: Org; data: Data }) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Presentation className="size-5 text-[#0b5b46]" />
+            <Presentation className="size-5 text-[var(--primary)]" />
             اللقاءات التطويرية
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <b className="text-3xl text-[#0b5b46]">{c.d.length}</b>
-          <p className="mt-1 text-sm text-slate-500">لقاء مخطط خلال السنة</p>
+          <b className="text-3xl text-[var(--primary)]">{c.d.length}</b>
+          <p className="mt-1 text-sm text-brand-muted">لقاء مخطط خلال السنة</p>
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <MapPinned className="size-5 text-[#0b5b46]" />
+            <MapPinned className="size-5 text-[var(--primary)]" />
             الرحلات
           </CardTitle>
         </CardHeader>
@@ -1400,20 +1402,20 @@ function PlanRead({ org, data }: { org: Org; data: Data }) {
           {c.t.length ? (
             <ol className="space-y-2">
               {c.t.map((x: string, i: number) => (
-                <li key={i} className="rounded-xl bg-slate-50 p-3 text-sm">
+                <li key={i} className="rounded-xl bg-brand-surface p-3 text-sm">
                   {i + 1}. {x || "غير مكتمل"}
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="text-sm text-slate-500">لم تتم الإضافة بعد.</p>
+            <p className="text-sm text-brand-muted">لم تتم الإضافة بعد.</p>
           )}
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="size-5 text-[#0b5b46]" />
+            <CalendarDays className="size-5 text-[var(--primary)]" />
             ورش العمل التدريبية
           </CardTitle>
         </CardHeader>
@@ -1421,7 +1423,7 @@ function PlanRead({ org, data }: { org: Org; data: Data }) {
           {c.w.length ? (
             <ol className="space-y-3">
               {c.w.map((axes: string[], i: number) => (
-                <li key={i} className="rounded-xl bg-slate-50 p-3 text-sm">
+                <li key={i} className="rounded-xl bg-brand-surface p-3 text-sm">
                   <b>ورشة العمل {i + 1}</b>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {axes.length ? (
@@ -1435,14 +1437,14 @@ function PlanRead({ org, data }: { org: Org; data: Data }) {
                         </Badge>
                       ))
                     ) : (
-                      <span className="text-rose-600">لم تحدد المحاور</span>
+                      <span className="text-primary">لم تحدد المحاور</span>
                     )}
                   </div>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="text-sm text-slate-500">لم تتم الإضافة بعد.</p>
+            <p className="text-sm text-brand-muted">لم تتم الإضافة بعد.</p>
           )}
         </CardContent>
       </Card>
@@ -1454,7 +1456,7 @@ function AchievementRead({ org }: { org: Org }) {
   if (org.achievementStatus === "not_started")
     return (
       <Card className="border-dashed">
-        <CardContent className="p-8 text-center text-slate-500">
+        <CardContent className="p-8 text-center text-brand-muted">
           لم تبدأ الجهة برفع الإنجاز بعد.
         </CardContent>
       </Card>
@@ -1464,7 +1466,7 @@ function AchievementRead({ org }: { org: Org }) {
       <div className="flex items-center justify-between rounded-2xl border bg-white p-4">
         <div>
           <b>حالة تسليم الإنجاز</b>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-brand-muted">
             {org.achievementSubmittedAt
               ? `تاريخ الإرسال: ${date(org.achievementSubmittedAt)}`
               : "محفوظ كمسودة"}
@@ -1487,10 +1489,10 @@ function AchievementRead({ org }: { org: Org }) {
               <Badge
                 className={
                   item.status === "completed"
-                    ? "bg-emerald-100 text-emerald-800"
+                    ? "bg-brand-soft text-primary"
                     : item.status === "partial"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-rose-100 text-rose-800"
+                      ? "bg-brand-soft text-primary"
+                      : "bg-brand-soft text-primary"
                 }
               >
                 {item.status === "completed"
@@ -1501,13 +1503,13 @@ function AchievementRead({ org }: { org: Org }) {
               </Badge>
             </div>
             {item.notes && (
-              <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm">
+              <p className="mt-4 rounded-xl bg-brand-surface p-3 text-sm">
                 {item.notes}
               </p>
             )}
             {item.evidenceUrl && (
               <a
-                className="mt-3 inline-block text-sm font-semibold text-[#0b5b46] underline"
+                className="mt-3 inline-block text-sm font-semibold text-[var(--primary)] underline"
                 href={item.evidenceUrl}
                 target="_blank"
                 rel="noreferrer"
@@ -1530,7 +1532,7 @@ function AssessmentAdmin({ data, reload }: { data: Data; reload: () => void }) {
       <Card>
         <CardContent className="p-5">
           <h2 className="text-xl font-bold">قياس البيئة التربوية</h2>
-          <p className="mt-2 text-sm leading-7 text-slate-600">
+          <p className="mt-2 text-sm leading-7 text-brand-muted">
             {pending.length} بيئة بانتظار الاعتماد. تضيف الجهة بيئاتها من
             رابطها، ثم تعتمدها هنا لفتح نماذج القياس.
           </p>
@@ -1549,7 +1551,7 @@ function AssessmentAdmin({ data, reload }: { data: Data; reload: () => void }) {
         </section>
       ))}
       {!data.organizations.length && (
-        <p className="text-slate-500">لا توجد جهات مشاركة بعد.</p>
+        <p className="text-brand-muted">لا توجد جهات مشاركة بعد.</p>
       )}
     </div>
   );
@@ -1610,7 +1612,7 @@ function EnvironmentManager({
             <CardTitle className="text-lg">
               البيئات التربوية التابعة للجهة
             </CardTitle>
-            <p className="text-sm leading-7 text-slate-600">
+            <p className="text-sm leading-7 text-brand-muted">
               أضف بيئات الجهة، وستفتح روابط القياس بعد اعتمادها من مشرف المشروع.
             </p>
           </CardHeader>
@@ -1661,9 +1663,7 @@ function EnvironmentManager({
                   <div className="min-w-0">
                     <Badge
                       variant="outline"
-                      className={
-                        approved ? "text-emerald-700" : "text-amber-700"
-                      }
+                      className={approved ? "text-primary" : "text-primary"}
                     >
                       {approved ? "معتمدة" : "بانتظار الاعتماد"}
                     </Badge>
@@ -1676,7 +1676,7 @@ function EnvironmentManager({
                     size="sm"
                     variant="ghost"
                     disabled={!!busy}
-                    className="text-rose-600"
+                    className="text-primary"
                     onClick={() => {
                       if (
                         window.confirm(`حذف بيئة «${env.name}» وجميع ردودها؟`)
@@ -1692,7 +1692,7 @@ function EnvironmentManager({
                   </Button>
                 </div>
                 {!approved && (
-                  <div className="rounded-xl bg-amber-50 p-4 text-sm leading-7">
+                  <div className="rounded-xl bg-brand-soft p-4 text-sm leading-7">
                     روابط القياس غير متاحة حتى اعتماد البيئة.
                     {admin && (
                       <Button
@@ -1719,9 +1719,9 @@ function EnvironmentManager({
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl bg-slate-50 p-3"
+                      className="rounded-xl bg-brand-surface p-3"
                     >
-                      <span className="text-sm text-slate-500">{label}</span>
+                      <span className="text-sm text-brand-muted">{label}</span>
                       <b className="mt-1 block text-sm">
                         {value === null
                           ? "—"
@@ -1740,7 +1740,7 @@ function EnvironmentManager({
                   ).map(([label, key]) => (
                     <div key={key}>
                       <p>{label}</p>
-                      <p className="mt-1 text-slate-600">
+                      <p className="mt-1 text-brand-muted">
                         قبلي: {pre[key].count} رد ·{" "}
                         {pre[key].total === null
                           ? "دون نتيجة"
@@ -1752,7 +1752,7 @@ function EnvironmentManager({
                       </p>
                     </div>
                   ))}
-                  <p className="text-slate-500">
+                  <p className="text-brand-muted">
                     النتيجة الكلية تظهر بعد ورود رد مكتمل من كل فئة، وتحسب من
                     متوسط كل فئة حسب وزنها.
                   </p>
@@ -1796,7 +1796,7 @@ function EnvironmentManager({
                       ))}
                     </div>
                     {!env.preCompletedAt ? (
-                      <div className="rounded-xl bg-[#edf5f2] p-4">
+                      <div className="rounded-xl bg-[var(--brand-soft)] p-4">
                         <p className="mb-3 text-sm leading-7">
                           بعد استلام جميع الردود المستهدفة من الفئتين، أتم
                           القياس القبلي لتثبيت النتيجة وإنشاء خطة التحسين وفتح
@@ -1825,7 +1825,7 @@ function EnvironmentManager({
                         </Button>
                       </div>
                     ) : (
-                      <p className="text-sm text-emerald-800">
+                      <p className="text-sm text-primary">
                         تم إتمام القياس القبلي في {date(env.preCompletedAt)}.
                         القياس البعدي متاح الآن.
                       </p>
@@ -1843,7 +1843,7 @@ function EnvironmentManager({
                         className="flex flex-wrap justify-between gap-2 text-sm"
                       >
                         <span>{axis.name}</span>
-                        <span className="text-slate-600">
+                        <span className="text-brand-muted">
                           قبلي{" "}
                           {pre.axisScores[i] === null
                             ? "—"
@@ -1858,7 +1858,7 @@ function EnvironmentManager({
                   </div>
                 )}
                 {admin && notes.length > 0 && (
-                  <div className="rounded-xl bg-slate-50 p-4 text-sm">
+                  <div className="rounded-xl bg-brand-surface p-4 text-sm">
                     <b>آخر الملاحظات النوعية</b>
                     {notes.map((r) => (
                       <div key={r.id} className="mt-2 border-t pt-2">
@@ -1878,7 +1878,7 @@ function EnvironmentManager({
           );
         })}
         {!environments.length && (
-          <p className="rounded-xl border border-dashed p-6 text-sm text-slate-500">
+          <p className="rounded-xl border border-dashed p-6 text-sm text-brand-muted">
             لم تضف الجهة بيئات تربوية بعد.
           </p>
         )}
@@ -1890,7 +1890,7 @@ function ImprovementPlanRead({ plan }: { plan: ImprovementPlan }) {
   return (
     <section className="space-y-4 border-t pt-4">
       <h4 className="text-lg font-bold">خطة تحسين البيئة</h4>
-      <p className="text-sm leading-7 text-slate-600">
+      <p className="text-sm leading-7 text-brand-muted">
         خطة مقترحة مبنية على أقل ثلاثة محاور في القياس القبلي الموزون. النتيجة
         القبلية: {plan.baseline.total}٪. تبدأ مدد التنفيذ من تاريخ إتمام القياس
         القبلي.
@@ -1985,17 +1985,26 @@ function AssessmentEntryForm({
       <Card>
         <CardContent className="grid min-h-80 place-items-center p-8 text-center">
           <div>
-            <div className="mx-auto grid size-16 place-items-center rounded-full bg-emerald-100 text-2xl text-emerald-700">
+            <div className="mx-auto grid size-16 place-items-center rounded-full bg-brand-soft text-2xl text-primary">
               ✓
             </div>
             <h1 className="mt-4 text-2xl font-bold">تم استلام التقييم</h1>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-brand-muted">
               شكرًا لك. تمت إضافة تقييمك المستقل إلى متوسط البيئة التربوية.
             </p>
           </div>
         </CardContent>
       </Card>
     );
+  const questionGroups =
+    audience === "community"
+      ? [
+          {
+            name: "community",
+            questions: COMMUNITY_AXES.flatMap((axis) => [...axis.questions]),
+          },
+        ]
+      : axes;
   let questionIndex = 0;
   return (
     <div className="space-y-5">
@@ -2005,7 +2014,7 @@ function AssessmentEntryForm({
             {phase === "pre" ? "القياس القبلي" : "القياس البعدي"}
           </Badge>
           <CardTitle>{environment.name}</CardTitle>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-brand-muted">
             {org.name} ·{" "}
             {audience === "community"
               ? "الطلاب وأولياء الأمور — ١٠ عبارات"
@@ -2052,7 +2061,7 @@ function AssessmentEntryForm({
             </b>
           </div>
           <Progress className="mt-3" value={(answered / questionCount) * 100} />
-          <div className="mt-4 grid grid-cols-5 gap-1 text-center text-[11px] text-slate-500">
+          <div className="mt-4 grid grid-cols-5 gap-1 text-center text-[11px] text-brand-muted">
             <span>1 غير متحقق</span>
             <span>2 ضعيف</span>
             <span>3 متوسط</span>
@@ -2061,26 +2070,31 @@ function AssessmentEntryForm({
           </div>
         </CardContent>
       </Card>
-      {axes.map((axis, axisIndex) => (
+      {questionGroups.map((axis, axisIndex) => (
         <Card key={axis.name}>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              {axisIndex + 1}. {axis.name}
-            </CardTitle>
-          </CardHeader>
+          {audience === "staff" && (
+            <CardHeader>
+              <CardTitle className="text-lg">
+                {axisIndex + 1}. {axis.name}
+              </CardTitle>
+            </CardHeader>
+          )}
           <CardContent className="space-y-5">
             {axis.questions.map((question) => {
               const index = questionIndex++;
               return (
                 <div key={question} className="rounded-2xl border p-4">
-                  <p className="text-sm font-medium leading-7">{question}</p>
+                  <p className="text-base font-medium leading-7">
+                    {audience === "community" && `${index + 1}. `}
+                    {question}
+                  </p>
                   <div className="mt-3 grid grid-cols-5 gap-2" dir="ltr">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <button
                         type="button"
                         key={value}
                         onClick={() => setAnswer(index, value)}
-                        className={`rounded-xl border py-2 text-sm font-bold transition ${answers[index] === value ? "border-[#0b5b46] bg-[#0b5b46] text-white" : "bg-white hover:bg-slate-50"}`}
+                        className={`rounded-xl border py-2 text-sm font-bold transition ${answers[index] === value ? "border-[var(--primary)] bg-[var(--primary)] text-white" : "bg-white hover:bg-brand-surface"}`}
                       >
                         {value}
                       </button>
@@ -2150,13 +2164,15 @@ function AssessmentPortal({
       </div>
     );
   return (
-    <div className="min-h-screen bg-[#f5f7f6]">
-      <Toaster position="top-center" richColors />
-      <header className="bg-[#073f32] text-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-5">
-          <div>
-            <b>قياس المنظمات 360°</b>
-            <p className="text-xs text-white/55">مشروع تأهيل المربي</p>
+    <div className="min-h-screen bg-[var(--background)]">
+      <Toaster position="top-center" />
+      <header className="bg-[var(--brand-ink)] text-white">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5">
+          <div className="flex items-center gap-4">
+            <div className="rounded-xl bg-white p-2">
+              <SiteLogo className="w-28" />
+            </div>
+            <b className="text-sm">قياس البيئة التربوية</b>
           </div>
           <span className="rounded-full bg-white/10 px-3 py-1.5 text-sm">
             {org.name}
@@ -2191,8 +2207,8 @@ function AssessmentPortal({
               />
             )
           ) : (
-            <Card className="border-rose-200">
-              <CardContent className="p-8 text-center text-rose-700">
+            <Card className="border-brand-stroke">
+              <CardContent className="p-8 text-center text-primary">
                 رابط البيئة غير صالح أو تم حذف البيئة.
               </CardContent>
             </Card>
@@ -2229,25 +2245,22 @@ function Portal({
       <div className="grid min-h-screen place-items-center">
         <div className="text-center">
           <h1 className="text-xl font-bold">رابط الجهة غير صالح</h1>
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 text-brand-muted">
             تواصل مع مشرف المشروع للحصول على الرابط الصحيح.
           </p>
         </div>
       </div>
     );
   return (
-    <div className="min-h-screen bg-[#f5f7f6]">
-      <Toaster position="top-center" richColors />
-      <header className="bg-[#073f32] text-white">
+    <div className="min-h-screen bg-[var(--background)]">
+      <Toaster position="top-center" />
+      <header className="bg-[var(--brand-ink)] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5">
           <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-xl bg-white/10 font-bold">
-              ت
+            <div className="rounded-xl bg-white p-2">
+              <SiteLogo className="w-28" />
             </div>
-            <div>
-              <b>مشروع تأهيل المربي</b>
-              <p className="text-xs text-white/55">بوابة الجهة المشاركة</p>
-            </div>
+            <b className="text-sm">بوابة الجهة المشاركة</b>
           </div>
           <span className="hidden rounded-full bg-white/10 px-3 py-1.5 text-sm sm:block">
             {org.name}
@@ -2256,11 +2269,11 @@ function Portal({
       </header>
       <main className="mx-auto max-w-5xl p-4 py-8">
         <div className="mb-6">
-          <p className="text-sm text-[#0b5b46]">{org.name}</p>
+          <p className="text-sm text-[var(--primary)]">{org.name}</p>
           <h1 className="mt-1 text-2xl font-bold">
             متابعة الخطة والإنجاز – مشروع تأهيل المربي
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500">
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-brand-muted">
             أدخل الخطة السنوية أولًا، وبعد اعتمادها يمكنك رفع الإنجاز الفعلي لكل
             نشاط، مع إمكانية إرفاق رابط إثبات اختياري.
           </p>
@@ -2390,11 +2403,11 @@ function PlanForm({
           <div className="flex items-center justify-between">
             <div>
               <b>نسبة اكتمال الخطة</b>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-brand-muted">
                 يتم التحديث تلقائيًا حسب البيانات المدخلة
               </p>
             </div>
-            <b className="text-2xl text-[#0b5b46]">{c.progress}%</b>
+            <b className="text-2xl text-[var(--primary)]">{c.progress}%</b>
           </div>
           <Progress className="mt-4 h-3" value={c.progress} />
         </CardContent>
@@ -2448,7 +2461,7 @@ function PlanForm({
           <CardTitle className="text-lg">مستند الخطة</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p id="plan-file-help" className="text-sm leading-7 text-slate-600">
+          <p id="plan-file-help" className="text-sm leading-7 text-brand-muted">
             أرفق مستند الخطة المعتمد لدى جهتكم. اضغط الملف قبل رفعه ليكون حجمه
             أقل من ٥ ميجابايت. المستند مطلوب عند اعتماد وإرسال الخطة.
           </p>
@@ -2490,12 +2503,12 @@ function PlanForm({
             <p
               id="plan-file-error"
               role="alert"
-              className="text-sm text-rose-700"
+              className="text-sm text-primary"
             >
               {fileError}
             </p>
             {file && (
-              <p className="break-all text-sm text-slate-600">
+              <p className="break-all text-sm text-brand-muted">
                 الملف المحدد: {file.name} —{" "}
                 {(file.size / 1024 / 1024).toFixed(2)} ميجابايت. سيُرفع عند حفظ
                 الخطة.
@@ -2518,15 +2531,15 @@ function PlanForm({
         </CardContent>
       </Card>
       {c.missing.length > 0 && (
-        <Card className="border-rose-200 bg-rose-50/50">
+        <Card className="border-brand-stroke bg-brand-soft/50">
           <CardHeader>
-            <CardTitle className="text-base text-rose-800">
+            <CardTitle className="text-base text-primary">
               لا يمكن اعتماد الخطة حاليًا
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="mb-2 text-sm font-semibold text-rose-700">المتبقي:</p>
-            <ul className="space-y-1 text-sm text-rose-700">
+            <p className="mb-2 text-sm font-semibold text-primary">المتبقي:</p>
+            <ul className="space-y-1 text-sm text-primary">
               {c.missing.map((x) => (
                 <li key={x}>• {x}</li>
               ))}
@@ -2563,12 +2576,12 @@ function AchievementForm({
     [busy, setBusy] = useState(false);
   if (org.planStatus !== "submitted")
     return (
-      <Card className="border-amber-200 bg-amber-50/50">
+      <Card className="border-brand-stroke bg-brand-soft/50">
         <CardContent className="p-8 text-center">
-          <h2 className="font-bold text-amber-900">
+          <h2 className="font-bold text-primary">
             رفع الإنجاز غير متاح حاليًا
           </h2>
-          <p className="mt-2 text-sm text-amber-700">
+          <p className="mt-2 text-sm text-primary">
             يجب اعتماد وإرسال الخطة السنوية أولًا، ثم سيُنشأ نموذج الإنجاز
             تلقائيًا بناءً على أنشطتها.
           </p>
@@ -2604,11 +2617,11 @@ function AchievementForm({
           <div className="flex items-center justify-between">
             <div>
               <b>اكتمال نموذج الإنجاز</b>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-brand-muted">
                 {completed} من {items.length} أنشطة تم تحديد حالتها
               </p>
             </div>
-            <b className="text-2xl text-[#0b5b46]">{progress}%</b>
+            <b className="text-2xl text-[var(--primary)]">{progress}%</b>
           </div>
           <Progress className="mt-4 h-3" value={progress} />
         </CardContent>
@@ -2653,7 +2666,7 @@ function AchievementForm({
                 onChange={(e) => update(i, { evidenceUrl: e.target.value })}
                 placeholder="https://drive.google.com/..."
               />
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-brand-muted">
                 اختياري: رابط ملف أو مجلد صور أو تقرير يدعم الإنجاز.
               </p>
             </div>
@@ -2689,10 +2702,10 @@ function CountSection({
       <CardHeader className="flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <I className="size-5 text-[#0b5b46]" />
+            <I className="size-5 text-[var(--primary)]" />
             {title}
           </CardTitle>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-brand-muted">
             الحد الأدنى: {min} · لا يلزم إدخال مواضيع اللقاءات
           </p>
         </div>
@@ -2736,10 +2749,10 @@ function WorkshopSection({
       <CardHeader className="flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <CalendarDays className="size-5 text-[#0b5b46]" />
+            <CalendarDays className="size-5 text-[var(--primary)]" />
             ورش العمل التدريبية
           </CardTitle>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-brand-muted">
             الحد الأدنى: {min} · يمكن اختيار أكثر من محور لكل ورشة
           </p>
         </div>
@@ -2762,11 +2775,11 @@ function WorkshopSection({
               {options.map((axis) => (
                 <label
                   key={axis}
-                  className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-sm transition ${selected.includes(axis) ? "border-[#77aa9b] bg-[#edf5f2] text-[#0b5b46]" : "bg-white hover:bg-slate-50"}`}
+                  className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-sm transition ${selected.includes(axis) ? "border-[var(--brand-light)] bg-[var(--brand-soft)] text-[var(--primary)]" : "bg-white hover:bg-brand-surface"}`}
                 >
                   <input
                     type="checkbox"
-                    className="size-4 accent-[#0b5b46]"
+                    className="size-4 accent-[var(--primary)]"
                     checked={selected.includes(axis)}
                     onChange={(e) => toggle(i, axis, e.target.checked)}
                   />
@@ -2777,7 +2790,7 @@ function WorkshopSection({
           </div>
         ))}
         {!items.length && (
-          <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+          <p className="rounded-xl bg-brand-surface p-4 text-sm text-brand-muted">
             حدد عدد الورش لإظهار خيارات المحاور.
           </p>
         )}
@@ -2799,10 +2812,10 @@ function DynamicSection({
       <CardHeader className="flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <I className="size-5 text-[#0b5b46]" />
+            <I className="size-5 text-[var(--primary)]" />
             {title}
           </CardTitle>
-          <p className="mt-1 text-sm text-slate-500">الحد الأدنى: {min}</p>
+          <p className="mt-1 text-sm text-brand-muted">الحد الأدنى: {min}</p>
         </div>
         <div className="flex items-center gap-2">
           <Label>العدد</Label>
@@ -2834,7 +2847,7 @@ function DynamicSection({
           </div>
         ))}
         {!items.length && (
-          <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+          <p className="rounded-xl bg-brand-surface p-4 text-sm text-brand-muted">
             حدد العدد لإظهار حقول التفاصيل.
           </p>
         )}
@@ -2868,10 +2881,10 @@ function Reports({ data }: { data: Data }) {
           ].map(([l, v]) => (
             <div
               key={l}
-              className="flex items-center justify-between rounded-xl bg-slate-50 p-4"
+              className="flex items-center justify-between rounded-xl bg-brand-surface p-4"
             >
               <span className="text-sm">{l}</span>
-              <b className="text-xl text-[#0b5b46]">{v}</b>
+              <b className="text-xl text-[var(--primary)]">{v}</b>
             </div>
           ))}
         </CardContent>
@@ -2879,7 +2892,7 @@ function Reports({ data }: { data: Data }) {
       <Card>
         <CardHeader>
           <CardTitle>القراءة النوعية لحالة الجهات</CardTitle>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-brand-muted">
             أولوية المتابعة المقترحة بناءً على الخطة والإنجاز.
           </p>
         </CardHeader>
@@ -2891,7 +2904,7 @@ function Reports({ data }: { data: Data }) {
                 ? {
                     label: "استكمال الخطة",
                     note: `الخطة مكتملة بنسبة ${c.progress}%`,
-                    style: "bg-amber-50 text-amber-800",
+                    style: "bg-brand-soft text-primary",
                   }
                 : o.achievementStatus === "not_started"
                   ? {
@@ -2903,12 +2916,12 @@ function Reports({ data }: { data: Data }) {
                     ? {
                         label: "أداء متقدم",
                         note: `معدل الإنجاز ${rate}%`,
-                        style: "bg-emerald-50 text-emerald-800",
+                        style: "bg-brand-soft text-primary",
                       }
                     : {
                         label: "متابعة الإنجاز",
                         note: `معدل الإنجاز ${rate}% ويحتاج استكمالًا`,
-                        style: "bg-rose-50 text-rose-800",
+                        style: "bg-brand-soft text-primary",
                       };
             return (
               <div
@@ -2917,14 +2930,16 @@ function Reports({ data }: { data: Data }) {
               >
                 <div>
                   <b className="text-sm">{o.name}</b>
-                  <p className="mt-1 text-xs text-slate-500">{insight.note}</p>
+                  <p className="mt-1 text-xs text-brand-muted">
+                    {insight.note}
+                  </p>
                 </div>
                 <Badge className={insight.style}>{insight.label}</Badge>
               </div>
             );
           })}
           {!rows.length && (
-            <p className="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+            <p className="rounded-xl bg-brand-surface p-6 text-center text-sm text-brand-muted">
               ستظهر القراءة النوعية بعد إضافة الجهات.
             </p>
           )}
@@ -2950,7 +2965,7 @@ function ProjectSettings({ data, reload }: { data: Data; reload: () => void }) {
     <Card className="max-w-3xl border-0 shadow-sm">
       <CardHeader>
         <CardTitle>إعدادات المشروع</CardTitle>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-brand-muted">
           تنعكس هذه القيم على التحقق من الخطط والحضور والتقارير.
         </p>
       </CardHeader>
@@ -2980,7 +2995,7 @@ function ProjectSettings({ data, reload }: { data: Data; reload: () => void }) {
         ))}
         <div className="sm:col-span-2">
           <Label>محاور ورش العمل التدريبية</Label>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-brand-muted">
             اكتب كل محور في سطر مستقل. ستظهر هذه القائمة للجهات كاختيار متعدد.
           </p>
           <Textarea
