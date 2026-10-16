@@ -244,3 +244,38 @@ export function buildImprovementPlan(
     }));
   return { createdAt, baseline: stats, items };
 }
+
+export type EvaluatorRoleCounts = {
+  student: number;
+  parent: number;
+  supervisor: number;
+  evaluator: number;
+  other: number;
+};
+export function evaluatorRoleCounts(
+  responses: { evaluatorRole?: unknown }[],
+): EvaluatorRoleCounts {
+  const counts: EvaluatorRoleCounts = {
+    student: 0,
+    parent: 0,
+    supervisor: 0,
+    evaluator: 0,
+    other: 0,
+  };
+  for (const response of responses) {
+    const role = String(response.evaluatorRole || "")
+      .trim()
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ى/g, "ي")
+      .replace(/ـ/g, "");
+    if (role === "طالب" || role === "طالبة") counts.student++;
+    else if (role === "ولي امر" || role === "ولية امر") counts.parent++;
+    else if (
+      ["مشرف في البيئة", "مشرف", "مشرفة", "مربي", "مربية"].includes(role)
+    )
+      counts.supervisor++;
+    else if (role === "مقيم" || role === "مقيمة") counts.evaluator++;
+    else counts.other++;
+  }
+  return counts;
+}

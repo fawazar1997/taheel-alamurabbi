@@ -1,6 +1,7 @@
 import { getSql } from "@/db";
 import {
   phaseStats,
+  evaluatorRoleCounts,
   buildImprovementPlan,
   type AssessmentInput,
   type ImprovementPlan,
@@ -115,7 +116,7 @@ async function readAll(token?: string | null) {
     ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
     : await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.archived=FALSE ORDER BY e.created_at`;
   const responseRows = token
-    ? await sql`SELECT a.environment_id AS "environmentId",a.phase,a.audience,a.answers::text AS answers FROM environment_assessments a JOIN learning_environments e ON e.id=a.environment_id JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
+    ? await sql`SELECT a.environment_id AS "environmentId",a.phase,a.audience,a.evaluator_role AS "evaluatorRole",a.answers::text AS answers FROM environment_assessments a JOIN learning_environments e ON e.id=a.environment_id JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
     : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.audience,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
   const environments = environmentRows.map((env) => {
     const rows = responseRows.filter((r) => r.environmentId === env.id);
@@ -131,6 +132,10 @@ async function readAll(token?: string | null) {
       preScore: pre.total,
       postScore: post.total,
       phaseStats: { pre, post },
+      evaluatorCounts: {
+        pre: evaluatorRoleCounts(rows.filter((r) => r.phase === "pre")),
+        post: evaluatorRoleCounts(rows.filter((r) => r.phase === "post")),
+      },
     };
   });
   const assessmentResponses = token ? [] : responseRows;

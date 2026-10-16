@@ -6,6 +6,7 @@ import {
   type PhaseStats,
   type ImprovementPlan,
   type Audience,
+  type EvaluatorRoleCounts,
 } from "@/lib/environment-assessment";
 import { useEffect, useState } from "react";
 import {
@@ -116,6 +117,7 @@ type Environment = {
   preCompletedAt: string | null;
   improvementPlan: ImprovementPlan | null;
   phaseStats: { pre: PhaseStats; post: PhaseStats };
+  evaluatorCounts: { pre: EvaluatorRoleCounts; post: EvaluatorRoleCounts };
   updatedAt: string;
 };
 type AssessmentResponse = {
@@ -355,9 +357,9 @@ export default function ProjectApp() {
   };
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <Toaster position="top-center" />
+      <Toaster position="top-center" dir="rtl" />
       <aside
-        className={`fixed inset-y-0 right-0 z-40 w-64 border-l border-[var(--border)] bg-[var(--brand-ink)] p-5 text-white transition-transform lg:translate-x-0 ${mobile ? "translate-x-0" : "translate-x-full"}`}
+        className={`fixed inset-y-0 start-0 z-40 w-64 border-e border-[var(--border)] bg-[var(--brand-ink)] p-5 text-white transition-transform lg:translate-x-0 ${mobile ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="mb-9 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -389,7 +391,7 @@ export default function ProjectApp() {
                 setView(id);
                 setMobile(false);
               }}
-              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-right text-sm transition ${view === id ? "bg-white text-[var(--brand-ink)] shadow" : "text-white/90 hover:bg-white/10 hover:text-white"}`}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-start text-sm transition ${view === id ? "bg-white text-[var(--brand-ink)] shadow" : "text-white/90 hover:bg-white/10 hover:text-white"}`}
             >
               <I className="size-5" />
               {l}
@@ -402,7 +404,7 @@ export default function ProjectApp() {
           <p className="mt-2 text-xs text-white/85">آخر مزامنة: الآن</p>
         </div>
       </aside>
-      <main className="lg:pr-64">
+      <main className="lg:ps-64">
         <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b bg-white/90 px-4 backdrop-blur lg:px-8">
           <div className="flex items-center gap-3">
             <button className="lg:hidden" onClick={() => setMobile(true)}>
@@ -521,7 +523,7 @@ function Dashboard({
           <button
             key={l}
             onClick={click}
-            className="rounded-2xl border bg-white p-5 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--brand-light)]"
+            className="rounded-2xl border bg-white p-5 text-start shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--brand-light)]"
           >
             <div className="mb-5 flex items-center justify-between">
               <span className="text-sm text-brand-muted">{l}</span>
@@ -530,7 +532,7 @@ function Dashboard({
               </span>
             </div>
             <b className="text-3xl">{v}</b>
-            <span className="mr-2 text-xs text-brand-muted">{x}</span>
+            <span className="ms-2 text-xs text-brand-muted">{x}</span>
           </button>
         ))}
       </div>
@@ -646,12 +648,12 @@ function Organizations({
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-1 gap-3">
           <div className="relative min-w-56 max-w-sm flex-1">
-            <Search className="absolute right-3 top-3 size-4 text-brand-muted" />
+            <Search className="absolute start-3 top-3 size-4 text-brand-muted" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="ابحث باسم الجهة"
-              className="bg-white pr-9"
+              className="bg-white ps-9"
             />
           </div>
           <select
@@ -803,7 +805,7 @@ function OrgDialog({
   };
   return (
     <DialogContent dir="rtl" className="sm:max-w-xl">
-      <DialogHeader className="text-right">
+      <DialogHeader className="text-start">
         <DialogTitle>
           {org ? "تعديل بيانات الجهة" : "إضافة جهة جديدة"}
         </DialogTitle>
@@ -1003,7 +1005,7 @@ function OrgFile({
         : "لم يبدأ";
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Toaster position="top-center" />
+      <Toaster position="top-center" dir="rtl" />
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <Button variant="ghost" onClick={back}>
@@ -1731,7 +1733,43 @@ function EnvironmentManager({
                   ))}
                 </div>
                 <div className="space-y-3 rounded-xl border p-4 text-sm">
-                  <p className="font-semibold">توزيع ردود القياس</p>
+                  <p className="font-semibold">عدد المقيمين حسب الصفة</p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>الصفة</TableHead>
+                        <TableHead>قبلي</TableHead>
+                        <TableHead>بعدي</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(
+                        [
+                          ["student", "الطلاب"],
+                          ["parent", "أولياء الأمور"],
+                          ["supervisor", "المشرفون"],
+                          ["evaluator", "المقيمون"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <TableRow key={key}>
+                          <TableCell>{label}</TableCell>
+                          <TableCell>{env.evaluatorCounts.pre[key]}</TableCell>
+                          <TableCell>{env.evaluatorCounts.post[key]}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(env.evaluatorCounts.pre.other > 0 ||
+                        env.evaluatorCounts.post.other > 0) && (
+                        <TableRow>
+                          <TableCell>صفات أخرى مسجلة سابقًا</TableCell>
+                          <TableCell>{env.evaluatorCounts.pre.other}</TableCell>
+                          <TableCell>
+                            {env.evaluatorCounts.post.other}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  <p className="font-semibold">توزيع ردود القياس والأوزان</p>
                   {(
                     [
                       ["الطلاب وأولياء الأمور — ٢٠٪", "community"],
@@ -2088,7 +2126,7 @@ function AssessmentEntryForm({
                     {audience === "community" && `${index + 1}. `}
                     {question}
                   </p>
-                  <div className="mt-3 grid grid-cols-5 gap-2" dir="ltr">
+                  <div className="mt-3 grid grid-cols-5 gap-2" dir="rtl">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <button
                         type="button"
@@ -2131,7 +2169,7 @@ function AssessmentEntryForm({
           </CardContent>
         </Card>
       )}
-      <div className="sticky bottom-3 rounded-2xl border bg-white/95 p-4 text-left shadow-lg backdrop-blur">
+      <div className="sticky bottom-3 rounded-2xl border bg-white/95 p-4 text-start shadow-lg backdrop-blur">
         <Button disabled={busy || answered !== questionCount} onClick={submit}>
           <Send /> إرسال التقييم
         </Button>
@@ -2165,7 +2203,7 @@ function AssessmentPortal({
     );
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Toaster position="top-center" />
+      <Toaster position="top-center" dir="rtl" />
       <header className="bg-[var(--brand-ink)] text-white">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5">
           <div className="flex items-center gap-4">
@@ -2253,7 +2291,7 @@ function Portal({
     );
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Toaster position="top-center" />
+      <Toaster position="top-center" dir="rtl" />
       <header className="bg-[var(--brand-ink)] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5">
           <div className="flex items-center gap-3">
@@ -2661,7 +2699,7 @@ function AchievementForm({
               <Input
                 className="mt-2"
                 type="url"
-                dir="ltr"
+                dir="auto"
                 value={item.evidenceUrl}
                 onChange={(e) => update(i, { evidenceUrl: e.target.value })}
                 placeholder="https://drive.google.com/..."

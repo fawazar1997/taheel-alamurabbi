@@ -101,16 +101,22 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-tajawal), Tahoma, Arial, sans-serif;
+  --font-sans: var(--font-ibm-plex), Tahoma, Arial, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
 }
 
+html {
+  direction: rtl;
+}
+
 body {
+  direction: rtl;
+  text-align: start;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-tajawal), Tahoma, Arial, sans-serif;
+  font-family: var(--font-ibm-plex), Tahoma, Arial, sans-serif;
   min-height: 100vh;
 }
 
