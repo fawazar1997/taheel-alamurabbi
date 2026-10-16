@@ -1031,7 +1031,7 @@ function EntityMeetingAttendance({
   const save = async () => {
     if (!valid)
       return toast.error(
-        "أدخل عدد المشاركين وعدد الحاضرين كأعداد صحيحة، بحيث لا يتجاوز الحضور عدد المشاركين في اللقاء",
+        "أدخل عدد المشاركين وعدد الحاضرين كأعداد صحيحة، بحيث لا يتجاوز الحضور عدد المشاركين من الجهة",
       );
     setBusy(true);
     try {
@@ -1065,7 +1065,7 @@ function EntityMeetingAttendance({
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor={`meeting-participants-${meeting}`}>
-            عدد المشاركين في اللقاء
+            عدد المشاركين من الجهة
           </Label>
           <Input
             id={`meeting-participants-${meeting}`}
