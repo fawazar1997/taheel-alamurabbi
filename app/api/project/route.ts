@@ -1,4 +1,10 @@
 import { getSql } from "@/db";
+import {
+  phaseStats,
+  buildImprovementPlan,
+  type AssessmentInput,
+  type ImprovementPlan,
+} from "@/lib/environment-assessment";
 import { ensurePlanDocumentSchema } from "@/lib/plan-document-db";
 
 export const runtime = "nodejs";
@@ -6,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const now = () => new Date().toISOString();
 const uid = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
-const ASSESSMENT_QUESTION_COUNT = 24;
+
 const DEFAULT_WORKSHOP_AXES = [
   "المحور التربوي",
   "المحور القيمي",
@@ -71,6 +77,11 @@ async function ensureSchema() {
     improvement_area TEXT NOT NULL DEFAULT '',
     submitted_at TIMESTAMPTZ NOT NULL
   )`;
+  // Existing environments remain approved; new entity requests are explicitly pending.
+  await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved'`;
+  await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS pre_completed_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS improvement_plan JSONB`;
+  await sql`ALTER TABLE environment_assessments ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'staff'`;
   await sql`CREATE INDEX IF NOT EXISTS idx_organizations_archived ON organizations(archived)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_annual_plans_org_year ON annual_plans(organization_id, year)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_attendance_org_meeting ON attendance(organization_id, meeting_number)`;
@@ -100,12 +111,29 @@ async function readAll(token?: string | null) {
   const attendanceRows = token
     ? []
     : await sql`SELECT organization_id AS "organizationId",meeting_number AS "meetingNumber",attendees,updated_at AS "updatedAt" FROM attendance`;
-  const environments = token
-    ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.pre_score AS "preScore",e.post_score AS "postScore",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
-    : await sql`SELECT id,organization_id AS "organizationId",name,pre_score AS "preScore",post_score AS "postScore",updated_at AS "updatedAt" FROM learning_environments ORDER BY created_at`;
-  const assessmentResponses = token
-    ? []
-    : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
+  const environmentRows = token
+    ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
+    : await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.archived=FALSE ORDER BY e.created_at`;
+  const responseRows = token
+    ? await sql`SELECT a.environment_id AS "environmentId",a.phase,a.audience,a.answers::text AS answers FROM environment_assessments a JOIN learning_environments e ON e.id=a.environment_id JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
+    : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.audience,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
+  const environments = environmentRows.map((env) => {
+    const rows = responseRows.filter((r) => r.environmentId === env.id);
+    const plan = env.improvementPlan as ImprovementPlan | null;
+    const pre =
+      plan?.baseline ||
+      phaseStats(rows.filter((r) => r.phase === "pre") as AssessmentInput[]);
+    const post = phaseStats(
+      rows.filter((r) => r.phase === "post") as AssessmentInput[],
+    );
+    return {
+      ...env,
+      preScore: pre.total,
+      postScore: post.total,
+      phaseStats: { pre, post },
+    };
+  });
+  const assessmentResponses = token ? [] : responseRows;
   return {
     settings,
     organizations: organizations.map((org) => ({
@@ -170,7 +198,7 @@ export async function POST(request: Request) {
           { error: "أدخل اسم البيئة التربوية" },
           { status: 400 },
         );
-      await sql`INSERT INTO learning_environments (id,organization_id,name,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},${t},${t})`;
+      await sql`INSERT INTO learning_environments (id,organization_id,name,approval_status,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},'pending',${t},${t})`;
     }
     if (b.action === "deleteEnvironment") {
       const org =
@@ -179,23 +207,93 @@ export async function POST(request: Request) {
         return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
       await sql`DELETE FROM learning_environments WHERE id=${b.id} AND organization_id=${org[0].id as string}`;
     }
+    if (b.action === "approveEnvironment") {
+      if (b.token)
+        return Response.json(
+          { error: "اعتماد البيئة يتم من لوحة تحكم المشرف" },
+          { status: 403 },
+        );
+      const rows =
+        await sql`UPDATE learning_environments SET approval_status='approved',updated_at=${t} WHERE id=${b.id} AND approval_status='pending' RETURNING id`;
+      if (!rows[0])
+        return Response.json(
+          { error: "البيئة غير موجودة أو تم اعتمادها بالفعل" },
+          { status: 409 },
+        );
+    }
+    if (b.action === "completePreAssessment") {
+      const env =
+        await sql`SELECT e.id,e.pre_completed_at,e.improvement_plan FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE e.id=${b.environmentId} AND o.access_token=${b.token} AND o.archived=FALSE AND e.approval_status='approved'`;
+      if (!env[0])
+        return Response.json(
+          { error: "البيئة غير معتمدة أو رابطها غير صالح" },
+          { status: 404 },
+        );
+      if (env[0].pre_completed_at)
+        return Response.json({ ok: true, plan: env[0].improvement_plan });
+      const rows =
+        await sql`SELECT audience,answers::text AS answers FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase='pre'`;
+      const stats = phaseStats(rows as AssessmentInput[]);
+      if (stats.total === null)
+        return Response.json(
+          {
+            error:
+              "يلزم رد قبلي مكتمل واحد على الأقل من الطلاب وأولياء الأمور، ورد من المشرفين والمقيمين. تأكد من استكمال جميع الردود المستهدفة ثم أتم القياس.",
+          },
+          { status: 400 },
+        );
+      const plan = buildImprovementPlan(stats, t);
+      const result = await sql.transaction([
+        sql`SELECT id FROM learning_environments WHERE id=${b.environmentId} FOR UPDATE`,
+        sql`UPDATE learning_environments SET pre_completed_at=${t},pre_score=${stats.total},improvement_plan=${JSON.stringify(plan)}::jsonb,updated_at=${t} WHERE id=${b.environmentId} AND pre_completed_at IS NULL AND approval_status='approved' AND (SELECT COUNT(*) FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase='pre')=${rows.length} RETURNING id`,
+      ]);
+      if (!result[1][0])
+        return Response.json(
+          {
+            error:
+              "وصل رد جديد أو تم إتمام القياس بالفعل. حدّث الصفحة وراجع النتائج ثم أعد المحاولة.",
+          },
+          { status: 409 },
+        );
+      return Response.json({ ok: true, plan });
+    }
     if (b.action === "saveAssessment") {
       const phase = b.phase === "pre" || b.phase === "post" ? b.phase : null;
-      const answers = Array.isArray(b.answers) ? b.answers.map(Number) : [];
+      const audience = b.audience === undefined ? "staff" : b.audience;
+      if (audience !== "staff" && audience !== "community")
+        return Response.json(
+          { error: "نوع نموذج القياس غير صالح" },
+          { status: 400 },
+        );
+      const count = audience === "community" ? 10 : 24;
+      const answers = Array.isArray(b.answers) ? b.answers : [];
       if (
         !phase ||
-        answers.length !== ASSESSMENT_QUESTION_COUNT ||
-        answers.some((x: number) => !Number.isInteger(x) || x < 1 || x > 5)
+        answers.length !== count ||
+        answers.some(
+          (x: unknown) =>
+            typeof x !== "number" || !Number.isInteger(x) || x < 1 || x > 5,
+        )
       )
         return Response.json(
-          { error: "أجب عن جميع عبارات القياس بدرجة من 1 إلى 5" },
+          {
+            error: `أجب عن جميع عبارات النموذج (${count} عبارة) بدرجة من 1 إلى 5`,
+          },
           { status: 400 },
         );
       const evaluatorName = String(b.evaluatorName || "").trim();
       const evaluatorRole = String(b.evaluatorRole || "").trim();
-      if (!evaluatorName || !evaluatorRole)
+      const allowedRoles =
+        audience === "community"
+          ? ["طالب", "ولي أمر"]
+          : ["مشرف في البيئة", "مقيم"];
+      if (
+        !evaluatorName ||
+        !evaluatorRole ||
+        (b.audience !== undefined && !allowedRoles.includes(evaluatorRole))
+      )
         return Response.json(
-          { error: "أدخل اسم المقيم وصفته أو علاقته بالبيئة" },
+          { error: "أدخل اسم المقيم واختر صفته في النموذج" },
           { status: 400 },
         );
       const env =
@@ -205,26 +303,20 @@ export async function POST(request: Request) {
           { error: "رابط البيئة غير صالح" },
           { status: 404 },
         );
-      await sql`INSERT INTO environment_assessments (id,environment_id,phase,evaluator_name,evaluator_role,answers,strengths,improvement_area,submitted_at) VALUES (${uid("assessment")},${b.environmentId},${phase},${evaluatorName},${evaluatorRole},${JSON.stringify(answers)}::jsonb,${String(b.strengths || "").trim()},${String(b.improvementArea || "").trim()},${t})`;
-      const responseRows =
-        await sql`SELECT answers::text AS answers FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase=${phase}`;
-      const average =
-        Math.round(
-          (responseRows.reduce((sum, row) => {
-            const values = JSON.parse(String(row.answers)) as number[];
-            return (
-              sum +
-              (values.reduce((a, x) => a + x, 0) / (values.length * 5)) * 100
-            );
-          }, 0) /
-            responseRows.length) *
-            10,
-        ) / 10;
-      if (phase === "pre")
-        await sql`UPDATE learning_environments SET pre_score=${average},updated_at=${t} WHERE id=${b.environmentId}`;
-      else
-        await sql`UPDATE learning_environments SET post_score=${average},updated_at=${t} WHERE id=${b.environmentId}`;
-      return Response.json({ ok: true, score: average });
+      // Lock the environment before checking the phase so a completed baseline cannot receive late submissions.
+      const result = await sql.transaction([
+        sql`SELECT id FROM learning_environments WHERE id=${b.environmentId} FOR UPDATE`,
+        sql`INSERT INTO environment_assessments (id,environment_id,phase,audience,evaluator_name,evaluator_role,answers,strengths,improvement_area,submitted_at) SELECT ${uid("assessment")},e.id,${phase},${audience},${evaluatorName},${evaluatorRole},${JSON.stringify(answers)}::jsonb,${String(b.strengths || "").trim()},${String(b.improvementArea || "").trim()},${t} FROM learning_environments e WHERE e.id=${b.environmentId} AND e.approval_status='approved' AND ((${phase}='pre' AND e.pre_completed_at IS NULL) OR (${phase}='post' AND e.pre_completed_at IS NOT NULL)) RETURNING id`,
+      ]);
+      if (!result[1][0])
+        return Response.json(
+          {
+            error:
+              "لا يمكن استقبال الرد: البيئة بانتظار الاعتماد، أو القياس القبلي مغلق، أو لم يتم إتمامه لبدء القياس البعدي.",
+          },
+          { status: 409 },
+        );
+      return Response.json({ ok: true });
     }
     if (b.action === "savePlan") {
       const org =
