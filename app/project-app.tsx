@@ -106,6 +106,7 @@ type Attend = {
   organizationId: string;
   meetingNumber: number;
   attendees: number;
+  updatedAt: string;
 };
 type Environment = {
   id: string;
@@ -436,7 +437,7 @@ export default function ProjectApp() {
           {view === "assessment" && (
             <AssessmentAdmin data={data} reload={load} />
           )}{" "}
-          {view === "attendance" && <Attendance data={data} reload={load} />}{" "}
+          {view === "attendance" && <Attendance data={data} />}{" "}
           {view === "reports" && <Reports data={data} />}{" "}
           {view === "settings" && <ProjectSettings data={data} reload={load} />}
         </div>
@@ -859,41 +860,17 @@ function OrgDialog({
     </DialogContent>
   );
 }
-function Attendance({ data, reload }: { data: Data; reload: () => void }) {
-  const [vals, setVals] = useState<Record<string, number>>(() =>
-    Object.fromEntries(
-      data.attendance.map((a) => [
-        `${a.organizationId}-${a.meetingNumber}`,
-        a.attendees,
-      ]),
-    ),
-  );
-  const save = async (id: string, m: number, max: number) => {
-    const v = vals[`${id}-${m}`] ?? 0;
-    if (v > max)
-      return toast.error("عدد الحضور لا يمكن أن يتجاوز عدد المشاركين");
-    try {
-      await post({
-        action: "saveAttendance",
-        organizationId: id,
-        meetingNumber: m,
-        attendees: v,
-      });
-      toast.success("تم حفظ الحضور");
-      reload();
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  };
+function Attendance({ data }: { data: Data }) {
   return (
     <Card className="border-0 shadow-sm">
       <CardHeader>
         <CardTitle>سجل حضور الجهات</CardTitle>
         <p className="text-sm text-brand-muted">
-          أدخل عدد الحاضرين، وستحسب النسبة تلقائيًا.
+          تسجل كل جهة حضورها من رابطها الخاص لكل لقاء على حدة، وتظهر النتائج هنا
+          تلقائيًا.
         </p>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
+      <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
@@ -905,73 +882,232 @@ function Attendance({ data, reload }: { data: Data; reload: () => void }) {
                   <TableHead key={i}>لقاء تأهيل المربي {i + 1}</TableHead>
                 ),
               )}
-              <TableHead>المتوسط</TableHead>
+              <TableHead>متوسط الحضور</TableHead>
+              <TableHead>رابط الجهة</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.organizations.map((o) => {
-              let sum = 0;
+            {data.organizations.map((org) => {
+              const records = data.attendance.filter(
+                (a) =>
+                  a.organizationId === org.id &&
+                  a.meetingNumber <= data.settings.educatorMeetings,
+              );
+              const denominator =
+                org.participants * data.settings.educatorMeetings;
+              const average = denominator
+                ? Math.round(
+                    (records.reduce((sum, a) => sum + a.attendees, 0) /
+                      denominator) *
+                      100,
+                  )
+                : 0;
               return (
-                <TableRow key={o.id}>
-                  <TableCell className="min-w-48 font-semibold">
-                    {o.name}
+                <TableRow key={org.id}>
+                  <TableCell className="min-w-40 font-semibold">
+                    {org.name}
                   </TableCell>
-                  <TableCell>{o.participants}</TableCell>
+                  <TableCell>{org.participants}</TableCell>
                   {Array.from(
                     { length: data.settings.educatorMeetings },
                     (_, i) => {
-                      const k = `${o.id}-${i + 1}`,
-                        v = vals[k] ?? 0;
-                      sum += v;
+                      const record = records.find(
+                        (a) => a.meetingNumber === i + 1,
+                      );
                       return (
                         <TableCell key={i}>
-                          <div className="flex min-w-44 items-center gap-2">
-                            <Input
-                              className="w-20"
-                              type="number"
-                              min={0}
-                              max={o.participants}
-                              value={v}
-                              onChange={(e) =>
-                                setVals({ ...vals, [k]: +e.target.value })
-                              }
-                            />
-                            <span className="w-10 text-xs text-brand-muted">
-                              {o.participants
-                                ? Math.round((v / o.participants) * 100)
-                                : 0}
-                              %
+                          {record ? (
+                            <div>
+                              <b>{record.attendees}</b>
+                              <span className="ms-2 text-sm text-brand-muted">
+                                (
+                                {org.participants
+                                  ? Math.round(
+                                      (record.attendees / org.participants) *
+                                        100,
+                                    )
+                                  : 0}
+                                ٪)
+                              </span>
+                              <p className="mt-1 text-xs text-brand-muted">
+                                {date(record.updatedAt)}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-brand-muted">
+                              لم يُسجل بعد
                             </span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => save(o.id, i + 1, o.participants)}
-                            >
-                              حفظ
-                            </Button>
-                          </div>
+                          )}
                         </TableCell>
                       );
                     },
                   )}
                   <TableCell>
-                    <b>
-                      {o.participants
-                        ? Math.round(
-                            (sum /
-                              (o.participants *
-                                data.settings.educatorMeetings)) *
-                              100,
-                          )
-                        : 0}
-                      %
-                    </b>
+                    <b>{average}٪</b>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(
+                            `${location.origin}/?org=${encodeURIComponent(org.accessToken)}&section=attendance`,
+                          );
+                          toast.success("تم نسخ رابط تسجيل الحضور");
+                        } catch {
+                          toast.error("تعذر نسخ الرابط");
+                        }
+                      }}
+                    >
+                      <Copy />
+                      نسخ رابط الحضور
+                    </Button>
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
+        {!data.organizations.length && (
+          <p className="p-5 text-sm text-brand-muted">
+            لا توجد جهات مشاركة بعد.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function EntityAttendance({
+  org,
+  data,
+  token,
+  reload,
+}: {
+  org: Org;
+  data: Data;
+  token: string;
+  reload: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-bold">حضور لقاءات تأهيل المربي</h2>
+        <p className="mt-2 text-sm leading-7 text-brand-muted">
+          أدخل عدد الحاضرين من جهتكم لكل لقاء، ثم احفظ حضور ذلك اللقاء بصورة
+          مستقلة. عدد المشاركين المسجل للجهة: {org.participants}.
+        </p>
+      </div>
+      <div className="grid gap-5 md:grid-cols-2">
+        {Array.from({ length: data.settings.educatorMeetings }, (_, i) => (
+          <EntityMeetingAttendance
+            key={i + 1}
+            org={org}
+            meeting={i + 1}
+            record={data.attendance.find(
+              (a) => a.organizationId === org.id && a.meetingNumber === i + 1,
+            )}
+            token={token}
+            reload={reload}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+function EntityMeetingAttendance({
+  org,
+  meeting,
+  record,
+  token,
+  reload,
+}: {
+  org: Org;
+  meeting: number;
+  record?: Attend;
+  token: string;
+  reload: () => void;
+}) {
+  const [value, setValue] = useState(record ? String(record.attendees) : "");
+  const [busy, setBusy] = useState(false);
+  const n = Number(value);
+  const valid =
+    value.trim() !== "" &&
+    Number.isInteger(n) &&
+    n >= 0 &&
+    n <= org.participants;
+  const save = async () => {
+    if (!valid)
+      return toast.error("أدخل عددًا صحيحًا للحضور لا يتجاوز عدد المشاركين");
+    setBusy(true);
+    try {
+      await post({
+        action: "saveAttendance",
+        token,
+        meetingNumber: meeting,
+        attendees: n,
+      });
+      toast.success(`تم حفظ حضور لقاء تأهيل المربي ${meeting}`);
+      reload();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "تعذر حفظ الحضور. أعد المحاولة.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">لقاء تأهيل المربي {meeting}</CardTitle>
+        <Badge variant="outline" className="w-fit">
+          {record ? "تم تسجيل الحضور" : "لم يُسجل الحضور بعد"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor={`meeting-attendance-${meeting}`}>عدد الحاضرين</Label>
+          <Input
+            id={`meeting-attendance-${meeting}`}
+            type="number"
+            min={0}
+            max={org.participants}
+            step={1}
+            inputMode="numeric"
+            value={value}
+            disabled={busy}
+            aria-describedby={`meeting-attendance-help-${meeting}`}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <p
+            id={`meeting-attendance-help-${meeting}`}
+            className="text-sm text-brand-muted"
+          >
+            من صفر إلى {org.participants} مشاركًا. أدخل صفرًا عند عدم وجود حضور.
+          </p>
+        </div>
+        <p className="text-sm">
+          نسبة الحضور:{" "}
+          <b>
+            {valid && org.participants
+              ? Math.round((n / org.participants) * 100)
+              : 0}
+            ٪
+          </b>
+        </p>
+        {record && (
+          <p className="text-sm text-brand-muted">
+            آخر حفظ: {date(record.updatedAt)} · العدد المحفوظ:{" "}
+            {record.attendees}
+          </p>
+        )}
+        <Button disabled={busy || !valid} onClick={save}>
+          <Save />
+          {busy ? "جارٍ الحفظ…" : `حفظ حضور اللقاء ${meeting}`}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -2273,10 +2409,14 @@ function Portal({
   reload: () => void;
 }) {
   const org = data.organizations[0];
+  const section =
+    typeof window !== "undefined"
+      ? new URLSearchParams(location.search).get("section")
+      : null;
   const requested =
-    typeof window !== "undefined" &&
-    new URLSearchParams(location.search).get("section") === "achievement"
-      ? "achievement"
+    section &&
+    ["plan", "achievement", "environments", "attendance"].includes(section)
+      ? section
       : "plan";
   if (!org)
     return (
@@ -2320,6 +2460,7 @@ function Portal({
           <TabsList className="mb-5 h-auto max-w-full flex-wrap bg-white p-2">
             <TabsTrigger value="plan">الخطة السنوية</TabsTrigger>
             <TabsTrigger value="achievement">رفع الإنجاز</TabsTrigger>
+            <TabsTrigger value="attendance">حضور اللقاءات</TabsTrigger>
             <TabsTrigger value="environments">البيئات التربوية</TabsTrigger>
           </TabsList>
           <TabsContent value="plan" className="space-y-5">
@@ -2345,6 +2486,14 @@ function Portal({
           </TabsContent>
           <TabsContent value="environments">
             <EnvironmentManager
+              org={org}
+              data={data}
+              token={token}
+              reload={reload}
+            />
+          </TabsContent>
+          <TabsContent value="attendance">
+            <EntityAttendance
               org={org}
               data={data}
               token={token}

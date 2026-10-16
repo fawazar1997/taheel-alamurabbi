@@ -110,7 +110,7 @@ async function readAll(token?: string | null) {
     ? await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE JOIN organizations o ON o.id=p.organization_id WHERE p.year=${settings.year} AND o.access_token=${token} AND o.archived=FALSE`
     : await sql`SELECT p.organization_id AS "organizationId",d.id,d.name,d.size FROM annual_plans p JOIN plan_documents d ON d.id=p.document_id AND d.complete=TRUE WHERE p.year=${settings.year}`;
   const attendanceRows = token
-    ? []
+    ? await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
     : await sql`SELECT organization_id AS "organizationId",meeting_number AS "meetingNumber",attendees,updated_at AS "updatedAt" FROM attendance`;
   const environmentRows = token
     ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
@@ -361,15 +361,45 @@ export async function POST(request: Request) {
       await sql`UPDATE annual_plans SET achievement_data=${JSON.stringify(items)}::jsonb,achievement_status=${b.submit ? "submitted" : "draft"},achievement_submitted_at=${b.submit ? t : null},updated_at=${t} WHERE organization_id=${org[0].id as string} AND year=(SELECT year FROM project_settings WHERE id=1)`;
     }
     if (b.action === "saveAttendance") {
-      const org =
-        await sql`SELECT participants FROM organizations WHERE id=${b.organizationId}`;
-      const n = Number(b.attendees) || 0;
-      if (!org[0] || n < 0 || n > Number(org[0].participants))
+      if (typeof b.token !== "string" || !b.token)
         return Response.json(
-          { error: "عدد الحضور يجب ألا يتجاوز عدد المشاركين" },
+          { error: "يتم تسجيل الحضور من رابط الجهة" },
+          { status: 403 },
+        );
+      const org =
+        await sql`SELECT o.id,o.participants,s.educator_meetings FROM organizations o CROSS JOIN project_settings s WHERE o.access_token=${b.token} AND o.archived=FALSE AND s.id=1`;
+      if (!org[0])
+        return Response.json({ error: "رابط الجهة غير صالح" }, { status: 404 });
+      if (b.organizationId && b.organizationId !== org[0].id)
+        return Response.json(
+          { error: "لا يمكن تسجيل حضور جهة أخرى" },
+          { status: 403 },
+        );
+      const n = b.attendees,
+        meeting = b.meetingNumber;
+      if (
+        !Number.isInteger(meeting) ||
+        meeting < 1 ||
+        meeting > Number(org[0].educator_meetings)
+      )
+        return Response.json({ error: "رقم اللقاء غير صالح" }, { status: 400 });
+      if (!Number.isInteger(n) || n < 0 || n > Number(org[0].participants))
+        return Response.json(
+          {
+            error:
+              "أدخل عددًا صحيحًا للحضور بين صفر وعدد المشاركين المسجل للجهة",
+          },
           { status: 400 },
         );
-      await sql`INSERT INTO attendance (id,organization_id,meeting_number,attendees,updated_at) VALUES (${uid("att")},${b.organizationId},${Number(b.meetingNumber)},${n},${t}) ON CONFLICT (organization_id,meeting_number) DO UPDATE SET attendees=EXCLUDED.attendees,updated_at=EXCLUDED.updated_at`;
+      const rows =
+        await sql`INSERT INTO attendance (id,organization_id,meeting_number,attendees,updated_at) SELECT ${uid("att")},o.id,${meeting},${n},${t} FROM organizations o WHERE o.id=${String(org[0].id)} AND o.archived=FALSE AND o.participants>=${n} AND EXISTS (SELECT 1 FROM project_settings WHERE id=1 AND educator_meetings>=${meeting}) ON CONFLICT (organization_id,meeting_number) DO UPDATE SET attendees=EXCLUDED.attendees,updated_at=EXCLUDED.updated_at RETURNING organization_id`;
+      if (!rows[0])
+        return Response.json(
+          {
+            error: "تغيرت بيانات الجهة أو اللقاءات. حدّث الصفحة وأعد المحاولة.",
+          },
+          { status: 409 },
+        );
     }
     if (b.action === "saveSettings")
       await sql`UPDATE project_settings SET project_name=${b.projectName},year=${Number(b.year)},educator_meetings=${Number(b.educatorMeetings)},min_development_meetings=${Number(b.minDevelopmentMeetings)},min_trips=${Number(b.minTrips)},min_workshops=${Number(b.minWorkshops)},workshop_axes=${JSON.stringify(Array.isArray(b.workshopAxes) ? b.workshopAxes.filter((x: unknown) => typeof x === "string" && x.trim()).map((x: string) => x.trim()) : DEFAULT_WORKSHOP_AXES)}::jsonb,updated_at=${t} WHERE id=1`;
