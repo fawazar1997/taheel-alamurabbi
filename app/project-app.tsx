@@ -116,7 +116,6 @@ type Environment = {
   name: string;
   preScore: number | null;
   postScore: number | null;
-  approvalStatus: "pending" | "approved";
   preCompletedAt: string | null;
   improvementPlan: ImprovementPlan | null;
   phaseStats: { pre: PhaseStats; post: PhaseStats };
@@ -1660,17 +1659,14 @@ function AchievementRead({ org }: { org: Org }) {
   );
 }
 function AssessmentAdmin({ data, reload }: { data: Data; reload: () => void }) {
-  const pending = data.environments.filter(
-    (e) => e.approvalStatus === "pending",
-  );
   return (
     <div className="space-y-6">
       <Card>
         <CardContent className="p-5">
           <h2 className="text-xl font-bold">قياس البيئة التربوية</h2>
           <p className="mt-2 text-sm leading-7 text-brand-muted">
-            {pending.length} بيئة بانتظار الاعتماد. تضيف الجهة بيئاتها من
-            رابطها، ثم تعتمدها هنا لفتح نماذج القياس.
+            تضيف الجهة بيئاتها من رابطها، وتتاح روابط القياس القبلي مباشرة لكل
+            بيئة.
           </p>
         </CardContent>
       </Card>
@@ -1732,7 +1728,7 @@ function EnvironmentManager({
     try {
       await post({ action: "createEnvironment", token, name });
       setName("");
-      toast.success("تم إرسال البيئة لاعتمادها من مشرف المشروع");
+      toast.success("تمت إضافة البيئة وإتاحة روابط القياس القبلي");
       reload();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذر إضافة البيئة");
@@ -1749,7 +1745,7 @@ function EnvironmentManager({
               البيئات التربوية التابعة للجهة
             </CardTitle>
             <p className="text-sm leading-7 text-brand-muted">
-              أضف بيئات الجهة، وستفتح روابط القياس بعد اعتمادها من مشرف المشروع.
+              أضف بيئات الجهة لاستخدام روابط القياس القبلي مباشرة.
             </p>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row">
@@ -1771,7 +1767,7 @@ function EnvironmentManager({
             />
             <Button disabled={!!busy} onClick={add}>
               <Plus />
-              إرسال للاعتماد
+              إضافة بيئة
             </Button>
           </CardContent>
         </Card>
@@ -1784,7 +1780,6 @@ function EnvironmentManager({
             pre.total !== null && after.total !== null
               ? Math.round((after.total - pre.total) * 10) / 10
               : null;
-          const approved = env.approvalStatus === "approved";
           const notes = (data.assessmentResponses || [])
             .filter(
               (r) =>
@@ -1797,12 +1792,7 @@ function EnvironmentManager({
               <CardContent className="space-y-4 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Badge
-                      variant="outline"
-                      className={approved ? "text-primary" : "text-primary"}
-                    >
-                      {approved ? "معتمدة" : "بانتظار الاعتماد"}
-                    </Badge>
+                    <Badge variant="outline">بيئة تربوية</Badge>
                     <h3 className="mt-2 break-words text-lg font-bold">
                       {env.name}
                     </h3>
@@ -1827,26 +1817,6 @@ function EnvironmentManager({
                     <Trash2 />
                   </Button>
                 </div>
-                {!approved && (
-                  <div className="rounded-xl bg-brand-soft p-4 text-sm leading-7">
-                    روابط القياس غير متاحة حتى اعتماد البيئة.
-                    {admin && (
-                      <Button
-                        className="mt-3 block"
-                        disabled={!!busy}
-                        onClick={() =>
-                          act(
-                            { action: "approveEnvironment", id: env.id },
-                            "تم اعتماد البيئة وفتح القياس القبلي",
-                            env.id,
-                          )
-                        }
-                      >
-                        اعتماد البيئة
-                      </Button>
-                    )}
-                  </div>
-                )}
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {[
                     ["القبلي", pre.total],
@@ -1929,81 +1899,79 @@ function EnvironmentManager({
                     متوسط كل فئة حسب وزنها.
                   </p>
                 </div>
-                {approved && (
-                  <>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {(
-                        [
-                          ["pre", "community", "قبلي — طلاب وأولياء أمور"],
-                          ["pre", "staff", "قبلي — مشرفون ومقيمون"],
-                          ["post", "community", "بعدي — طلاب وأولياء أمور"],
-                          ["post", "staff", "بعدي — مشرفون ومقيمون"],
-                        ] as const
-                      ).map(([phase, audience, label]) => (
-                        <Button
-                          key={`${phase}-${audience}`}
-                          variant="outline"
-                          className="h-auto whitespace-normal py-3 text-sm"
-                          disabled={
-                            phase === "pre"
-                              ? !!env.preCompletedAt
-                              : !env.preCompletedAt
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(
+                      [
+                        ["pre", "community", "قبلي — طلاب وأولياء أمور"],
+                        ["pre", "staff", "قبلي — مشرفون ومقيمون"],
+                        ["post", "community", "بعدي — طلاب وأولياء أمور"],
+                        ["post", "staff", "بعدي — مشرفون ومقيمون"],
+                      ] as const
+                    ).map(([phase, audience, label]) => (
+                      <Button
+                        key={`${phase}-${audience}`}
+                        variant="outline"
+                        className="h-auto whitespace-normal py-3 text-sm"
+                        disabled={
+                          phase === "pre"
+                            ? !!env.preCompletedAt
+                            : !env.preCompletedAt
+                        }
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              `${location.origin}/?assessment=${encodeURIComponent(token)}&environment=${encodeURIComponent(env.id)}&phase=${phase}&audience=${audience}`,
+                            );
+                            toast.success("تم نسخ رابط النموذج");
+                          } catch {
+                            toast.error(
+                              "تعذر نسخ الرابط. تحقق من صلاحية الحافظة.",
+                            );
                           }
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(
-                                `${location.origin}/?assessment=${encodeURIComponent(token)}&environment=${encodeURIComponent(env.id)}&phase=${phase}&audience=${audience}`,
-                              );
-                              toast.success("تم نسخ رابط النموذج");
-                            } catch {
-                              toast.error(
-                                "تعذر نسخ الرابط. تحقق من صلاحية الحافظة.",
-                              );
-                            }
-                          }}
-                        >
-                          <Copy className="shrink-0" />
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                    {!env.preCompletedAt ? (
-                      <div className="rounded-xl bg-[var(--brand-soft)] p-4">
-                        <p className="mb-3 text-sm leading-7">
-                          بعد استلام جميع الردود المستهدفة من الفئتين، أتم
-                          القياس القبلي لتثبيت النتيجة وإنشاء خطة التحسين وفتح
-                          القياس البعدي. يلزم رد مكتمل واحد على الأقل من كل فئة.
-                        </p>
-                        <Button
-                          disabled={!!busy || pre.total === null}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                "هل استُكملت جميع الردود القبلية المستهدفة؟ سيُغلق القياس القبلي وتُثبت النتيجة وتُنشأ خطة التحسين.",
-                              )
-                            )
-                              act(
-                                {
-                                  action: "completePreAssessment",
-                                  token,
-                                  environmentId: env.id,
-                                },
-                                "تم إتمام القياس القبلي وإنشاء خطة التحسين",
-                                env.id,
-                              );
-                          }}
-                        >
-                          إتمام القياس القبلي
-                        </Button>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-primary">
-                        تم إتمام القياس القبلي في {date(env.preCompletedAt)}.
-                        القياس البعدي متاح الآن.
+                        }}
+                      >
+                        <Copy className="shrink-0" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                  {!env.preCompletedAt ? (
+                    <div className="rounded-xl bg-[var(--brand-soft)] p-4">
+                      <p className="mb-3 text-sm leading-7">
+                        بعد استلام جميع الردود المستهدفة من الفئتين، أتم القياس
+                        القبلي لتثبيت النتيجة وإنشاء خطة التحسين وفتح القياس
+                        البعدي. يلزم رد مكتمل واحد على الأقل من كل فئة.
                       </p>
-                    )}
-                  </>
-                )}
+                      <Button
+                        disabled={!!busy || pre.total === null}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "هل استُكملت جميع الردود القبلية المستهدفة؟ سيُغلق القياس القبلي وتُثبت النتيجة وتُنشأ خطة التحسين.",
+                            )
+                          )
+                            act(
+                              {
+                                action: "completePreAssessment",
+                                token,
+                                environmentId: env.id,
+                              },
+                              "تم إتمام القياس القبلي وإنشاء خطة التحسين",
+                              env.id,
+                            );
+                        }}
+                      >
+                        إتمام القياس القبلي
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-primary">
+                      تم إتمام القياس القبلي في {date(env.preCompletedAt)}.
+                      القياس البعدي متاح الآن.
+                    </p>
+                  )}
+                </>
                 {pre.axisScores.some((x) => x !== null) && (
                   <div className="space-y-2 border-t pt-4">
                     <p className="text-sm font-semibold">
@@ -2187,7 +2155,6 @@ function AssessmentEntryForm({
           </Badge>
           <CardTitle>{environment.name}</CardTitle>
           <p className="text-sm text-brand-muted">
-            {org.name} ·{" "}
             {audience === "community"
               ? "الطلاب وأولياء الأمور — ١٠ عبارات"
               : "المشرفون في البيئة والمقيمون — ٢٤ عبارة"}{" "}
@@ -2340,32 +2307,27 @@ function AssessmentPortal({
       <Toaster position="top-center" dir="rtl" />
       <header className="bg-[var(--brand-ink)] text-white">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5">
-          <div className="flex items-center gap-4">
-            <div className="rounded-xl bg-white p-2">
-              <SiteLogo className="w-28" />
-            </div>
-            <b className="text-sm">قياس البيئة التربوية</b>
+          <div className="min-w-0">
+            <h1 className="break-words text-xl font-bold">
+              {selectedEnvironment?.name || "البيئات التربوية"}
+            </h1>
           </div>
-          <span className="rounded-full bg-white/10 px-3 py-1.5 text-sm">
-            {org.name}
-          </span>
         </div>
       </header>
       <main className="mx-auto max-w-4xl p-4 py-10">
         {environmentId && (phase === "pre" || phase === "post") ? (
           selectedEnvironment &&
           (audience === "staff" || audience === "community") ? (
-            selectedEnvironment.approvalStatus !== "approved" ||
-            (phase === "pre"
-              ? !!selectedEnvironment.preCompletedAt
-              : !selectedEnvironment.preCompletedAt) ? (
+            (
+              phase === "pre"
+                ? !!selectedEnvironment.preCompletedAt
+                : !selectedEnvironment.preCompletedAt
+            ) ? (
               <Card>
                 <CardContent className="p-8 text-center leading-8">
-                  {selectedEnvironment.approvalStatus !== "approved"
-                    ? "البيئة بانتظار اعتماد مشرف المشروع."
-                    : phase === "pre"
-                      ? "تم إتمام القياس القبلي وإغلاق استقبال الردود. شكرًا لتعاونكم."
-                      : "القياس البعدي غير متاح قبل إتمام القياس القبلي."}
+                  {phase === "pre"
+                    ? "تم إتمام القياس القبلي وإغلاق استقبال الردود. شكرًا لتعاونكم."
+                    : "القياس البعدي غير متاح قبل إتمام القياس القبلي."}
                 </CardContent>
               </Card>
             ) : (
@@ -2464,7 +2426,7 @@ function Portal({
           <TabsContent value="plan" className="space-y-5">
             <details className="rounded-xl border bg-white p-5">
               <summary className="cursor-pointer text-lg font-bold">
-                إضافة البيئات التربوية ومتابعة اعتمادها
+                إضافة البيئات التربوية ومتابعة قياسها
               </summary>
               <div className="mt-5">
                 <EnvironmentManager

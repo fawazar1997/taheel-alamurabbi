@@ -80,7 +80,7 @@ async function ensureSchema() {
     improvement_area TEXT NOT NULL DEFAULT '',
     submitted_at TIMESTAMPTZ NOT NULL
   )`;
-  // Existing environments remain approved; new entity requests are explicitly pending.
+  // Retain the legacy approval column for existing records; it no longer gates access.
   await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved'`;
   await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS pre_completed_at TIMESTAMPTZ`;
   await sql`ALTER TABLE learning_environments ADD COLUMN IF NOT EXISTS improvement_plan JSONB`;
@@ -115,8 +115,8 @@ async function readAll(token?: string | null) {
     ? await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",COALESCE(a.participants,o.participants) AS participants,a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.access_token=${token} AND o.archived=FALSE AND a.meeting_number BETWEEN 1 AND ${settings.educatorMeetings}`
     : await sql`SELECT a.organization_id AS "organizationId",a.meeting_number AS "meetingNumber",COALESCE(a.participants,o.participants) AS participants,a.attendees,a.updated_at AS "updatedAt" FROM attendance a JOIN organizations o ON o.id=a.organization_id WHERE o.archived=FALSE AND a.meeting_number BETWEEN 1 AND ${settings.educatorMeetings}`;
   const environmentRows = token
-    ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
-    : await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.approval_status AS "approvalStatus",e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.archived=FALSE ORDER BY e.created_at`;
+    ? await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE ORDER BY e.created_at`
+    : await sql`SELECT e.id,e.organization_id AS "organizationId",e.name,e.pre_completed_at AS "preCompletedAt",e.improvement_plan AS "improvementPlan",e.updated_at AS "updatedAt" FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE o.archived=FALSE ORDER BY e.created_at`;
   const responseRows = token
     ? await sql`SELECT a.environment_id AS "environmentId",a.phase,a.audience,a.evaluator_role AS "evaluatorRole",a.answers::text AS answers FROM environment_assessments a JOIN learning_environments e ON e.id=a.environment_id JOIN organizations o ON o.id=e.organization_id WHERE o.access_token=${token} AND o.archived=FALSE`
     : await sql`SELECT a.id,a.environment_id AS "environmentId",a.phase,a.audience,a.evaluator_name AS "evaluatorName",a.evaluator_role AS "evaluatorRole",a.answers::text AS answers,a.strengths,a.improvement_area AS "improvementArea",a.submitted_at AS "submittedAt" FROM environment_assessments a ORDER BY a.submitted_at DESC`;
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
           { error: "أدخل اسم البيئة التربوية" },
           { status: 400 },
         );
-      await sql`INSERT INTO learning_environments (id,organization_id,name,approval_status,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},'pending',${t},${t})`;
+      await sql`INSERT INTO learning_environments (id,organization_id,name,approval_status,created_at,updated_at) VALUES (${uid("env")},${org[0].id as string},${name},'approved',${t},${t})`;
     }
     if (b.action === "deleteEnvironment") {
       const org =
@@ -220,26 +220,12 @@ export async function POST(request: Request) {
         return Response.json({ error: "الرابط غير صالح" }, { status: 404 });
       await sql`DELETE FROM learning_environments WHERE id=${b.id} AND organization_id=${org[0].id as string}`;
     }
-    if (b.action === "approveEnvironment") {
-      if (b.token)
-        return Response.json(
-          { error: "اعتماد البيئة يتم من لوحة تحكم المشرف" },
-          { status: 403 },
-        );
-      const rows =
-        await sql`UPDATE learning_environments SET approval_status='approved',updated_at=${t} WHERE id=${b.id} AND approval_status='pending' RETURNING id`;
-      if (!rows[0])
-        return Response.json(
-          { error: "البيئة غير موجودة أو تم اعتمادها بالفعل" },
-          { status: 409 },
-        );
-    }
     if (b.action === "completePreAssessment") {
       const env =
-        await sql`SELECT e.id,e.pre_completed_at,e.improvement_plan FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE e.id=${b.environmentId} AND o.access_token=${b.token} AND o.archived=FALSE AND e.approval_status='approved'`;
+        await sql`SELECT e.id,e.pre_completed_at,e.improvement_plan FROM learning_environments e JOIN organizations o ON o.id=e.organization_id WHERE e.id=${b.environmentId} AND o.access_token=${b.token} AND o.archived=FALSE`;
       if (!env[0])
         return Response.json(
-          { error: "البيئة غير معتمدة أو رابطها غير صالح" },
+          { error: "رابط البيئة غير صالح" },
           { status: 404 },
         );
       if (env[0].pre_completed_at)
@@ -258,7 +244,7 @@ export async function POST(request: Request) {
       const plan = buildImprovementPlan(stats, t);
       const result = await sql.transaction([
         sql`SELECT id FROM learning_environments WHERE id=${b.environmentId} FOR UPDATE`,
-        sql`UPDATE learning_environments SET pre_completed_at=${t},pre_score=${stats.total},improvement_plan=${JSON.stringify(plan)}::jsonb,updated_at=${t} WHERE id=${b.environmentId} AND pre_completed_at IS NULL AND approval_status='approved' AND (SELECT COUNT(*) FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase='pre')=${rows.length} RETURNING id`,
+        sql`UPDATE learning_environments SET pre_completed_at=${t},pre_score=${stats.total},improvement_plan=${JSON.stringify(plan)}::jsonb,updated_at=${t} WHERE id=${b.environmentId} AND pre_completed_at IS NULL AND (SELECT COUNT(*) FROM environment_assessments WHERE environment_id=${b.environmentId} AND phase='pre')=${rows.length} RETURNING id`,
       ]);
       if (!result[1][0])
         return Response.json(
@@ -319,13 +305,13 @@ export async function POST(request: Request) {
       // Lock the environment before checking the phase so a completed baseline cannot receive late submissions.
       const result = await sql.transaction([
         sql`SELECT id FROM learning_environments WHERE id=${b.environmentId} FOR UPDATE`,
-        sql`INSERT INTO environment_assessments (id,environment_id,phase,audience,evaluator_name,evaluator_role,answers,strengths,improvement_area,submitted_at) SELECT ${uid("assessment")},e.id,${phase},${audience},${evaluatorName},${evaluatorRole},${JSON.stringify(answers)}::jsonb,${String(b.strengths || "").trim()},${String(b.improvementArea || "").trim()},${t} FROM learning_environments e WHERE e.id=${b.environmentId} AND e.approval_status='approved' AND ((${phase}='pre' AND e.pre_completed_at IS NULL) OR (${phase}='post' AND e.pre_completed_at IS NOT NULL)) RETURNING id`,
+        sql`INSERT INTO environment_assessments (id,environment_id,phase,audience,evaluator_name,evaluator_role,answers,strengths,improvement_area,submitted_at) SELECT ${uid("assessment")},e.id,${phase},${audience},${evaluatorName},${evaluatorRole},${JSON.stringify(answers)}::jsonb,${String(b.strengths || "").trim()},${String(b.improvementArea || "").trim()},${t} FROM learning_environments e WHERE e.id=${b.environmentId} AND ((${phase}='pre' AND e.pre_completed_at IS NULL) OR (${phase}='post' AND e.pre_completed_at IS NOT NULL)) RETURNING id`,
       ]);
       if (!result[1][0])
         return Response.json(
           {
             error:
-              "لا يمكن استقبال الرد: البيئة بانتظار الاعتماد، أو القياس القبلي مغلق، أو لم يتم إتمامه لبدء القياس البعدي.",
+              "لا يمكن استقبال الرد: القياس القبلي مغلق، أو لم يتم إتمامه لبدء القياس البعدي.",
           },
           { status: 409 },
         );
